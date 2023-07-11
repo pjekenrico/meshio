@@ -21,6 +21,9 @@ def add_args(parser):
 
     
 def binary(args):
+    if not isinstance(args.infile, list):
+        args.infile = [args.infile]
+
     for file in args.infile:
         if args.input_format:
             fmts = [args.input_format]
