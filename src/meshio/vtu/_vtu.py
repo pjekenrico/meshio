@@ -414,8 +414,8 @@ class VtuReader:
                         piece_cell_data_raw[c.attrib["Name"]] = self.read_data(c)
 
                     cell_data_raw.append(piece_cell_data_raw)
-                else:
-                    print(f"Warning: Ignoring unknown tag '{child.tag}' in vtu.")
+               # else:
+               #     print(f"Warning: Ignoring unknown tag '{child.tag}' in vtu.")
                     
 
         if not cell_data_raw:
