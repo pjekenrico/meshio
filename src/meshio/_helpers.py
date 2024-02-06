@@ -48,7 +48,7 @@ def _filetypes_from_path(path: Path) -> list[str]:
     for suffix in reversed(path.suffixes):
         ext = (suffix + ext).lower()
         try:
-            out += extension_to_filetypes[ext]
+            out += reversed(extension_to_filetypes[ext])
         except KeyError:
             pass
 
@@ -57,7 +57,7 @@ def _filetypes_from_path(path: Path) -> list[str]:
     return out
 
 
-def read(filename, file_format: str | None = None):
+def read(filename, file_format: str | None = None) -> Mesh:
     """Reads an unstructured mesh with added data.
 
     :param filenames: The files/PathLikes to read from.
