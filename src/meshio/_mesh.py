@@ -120,6 +120,7 @@ class Mesh:
         cells: dict[str, ArrayLike] | list[tuple[str, ArrayLike] | CellBlock],
         point_data: dict[str, ArrayLike] | None = None,
         cell_data: dict[str, list[ArrayLike]] | None = None,
+        user_data: dict[str, list[ArrayLike]] | None = None,
         field_data=None,
         point_sets: dict[str, ArrayLike] | None = None,
         cell_sets: dict[str, list[ArrayLike]] | None = None,
@@ -153,6 +154,7 @@ class Mesh:
 
         self.point_data = {} if point_data is None else point_data
         self.cell_data = {} if cell_data is None else cell_data
+        self.user_data = {} if user_data is None else user_data
         self.field_data = {} if field_data is None else field_data
         self.point_sets = {} if point_sets is None else point_sets
         self.cell_sets = {} if cell_sets is None else cell_sets
@@ -224,6 +226,10 @@ class Mesh:
         if self.cell_data:
             names = ", ".join(self.cell_data.keys())
             lines.append(f"  Cell data: {names}")
+
+        if self.user_data:
+            names = ", ".join(self.user_data.keys())
+            lines.append(f"  User data: {names}")
 
         if self.field_data:
             names = ", ".join(self.field_data.keys())

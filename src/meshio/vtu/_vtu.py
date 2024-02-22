@@ -358,11 +358,13 @@ class VtuReader:
         cells = []
         point_data = []
         cell_data_raw = []
+        user_data = []
 
         for piece in pieces:
             piece_cells = {}
             piece_point_data = {}
             piece_cell_data_raw = {}
+            piece_user_data = {}
 
             num_points = int(piece.attrib["NumberOfPoints"])
             num_cells = int(piece.attrib["NumberOfCells"])
@@ -415,6 +417,14 @@ class VtuReader:
                         piece_cell_data_raw[c.attrib["Name"]] = self.read_data(c)
 
                     cell_data_raw.append(piece_cell_data_raw)
+
+                elif child.tag == "UserData":
+                    for c in child:
+                        if c.tag != "DataArray":
+                            raise ReadError()
+                        piece_user_data[c.attrib["Name"]] = self.read_data(c)
+
+                    user_data.append(piece_user_data)
                # else:
                #     print(f"Warning: Ignoring unknown tag '{child.tag}' in vtu.")
                     
@@ -444,6 +454,14 @@ class VtuReader:
             point_offsets, cells, cell_data_raw
         )
         self.field_data = field_data
+
+        if user_data:
+            self.user_data = {
+                key: np.concatenate([ud[key] for ud in user_data])
+                for key in user_data[0]
+            }
+        else:
+            self.user_data = None
 
     def read_uncompressed_binary(self, data, dtype):
         byte_string = base64.b64decode(data)
@@ -581,6 +599,7 @@ def read(filename):
         reader.cells,
         point_data=reader.point_data,
         cell_data=reader.cell_data,
+        user_data=reader.user_data,
         field_data=reader.field_data,
     )
 
@@ -704,6 +723,7 @@ def write(filename, mesh, binary=True, compression="zlib", header_type=None):
     def numpy_to_xml_array(parent, name, data):
         vtu_type = numpy_to_vtu_type[data.dtype]
         fmt = "{:.11e}" if vtu_type.startswith("Float") else "{:d}"
+        npfmt = "%-1.11g" if vtu_type.startswith("Float") else "%-d"
         da = ET.SubElement(parent, "DataArray", type=vtu_type, Name=name)
         if len(data.shape) == 2:
             da.set("NumberOfComponents", f"{data.shape[1]}")
@@ -749,8 +769,19 @@ def write(filename, mesh, binary=True, compression="zlib", header_type=None):
             # joining and writing is a bit faster, but consumes huge amounts of
             # memory:
             #   f.write("\n".join(map(fmt.format, data.reshape(-1))))
-            for item in data.reshape(-1):
-                f.write((fmt + "\n").format(item))
+
+            # normal meshio behaviour:
+            # for item in data.reshape(-1):
+            #     f.write((fmt + "\n").format(item))
+
+            np.savetxt(f, data, fmt=npfmt, footer='', header='')
+            # savetxt adds a newline at the end of the file that we don't want
+            import os
+            NEWLINE_SIZE_IN_BYTES = 1 # 2 on Windows?
+            f.seek(0, os.SEEK_END) # Go to the end of the file.
+            # Go backwards one byte from the end of the file.
+            f.seek(f.tell() - NEWLINE_SIZE_IN_BYTES, os.SEEK_SET)
+            f.truncate() # Truncate the file to this point.
 
         if binary:
             da.set("format", "binary")
@@ -847,7 +878,7 @@ def write(filename, mesh, binary=True, compression="zlib", header_type=None):
                 new_order = meshio_to_vtk_order(v.type)
                 if new_order is not None:
                     d = d[:, new_order]
-                connectivity.append(d.flatten())
+                connectivity.append(d)
             connectivity = np.concatenate(connectivity)
 
             # offset (points to the first element of the next cell)
@@ -904,6 +935,11 @@ def write(filename, mesh, binary=True, compression="zlib", header_type=None):
         cd = ET.SubElement(piece, "CellData")
         for name, data in raw_from_cell_data(mesh.cell_data).items():
             numpy_to_xml_array(cd, name, data)
+    
+    if mesh.user_data:
+        ud = ET.SubElement(piece, "UserData")
+        for name, data in mesh.user_data.items():
+            numpy_to_xml_array(ud, name, data)
 
     # write_xml(filename, vtk_file, pretty_xml)
     tree = ET.ElementTree(vtk_file)

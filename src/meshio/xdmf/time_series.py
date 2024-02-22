@@ -135,6 +135,7 @@ class TimeSeriesReader:
     def read_data(self, k: int):
         point_data = {}
         cell_data_raw = {}
+        user_data = {}
 
         t = None
 
@@ -155,6 +156,10 @@ class TimeSeriesReader:
                     if c.get("Center") != "Cell":
                         raise ReadError()
                     cell_data_raw[name] = data
+            elif c.tag == "DataItem":
+                name = c.get("Name")
+                data = self._read_data_item(c)
+                user_data[name] = data
             else:
                 # skip the xi:included mesh
                 continue
@@ -165,7 +170,7 @@ class TimeSeriesReader:
         if t is None:
             raise ReadError()
 
-        return t, point_data, cell_data
+        return t, point_data, cell_data, user_data
 
     def _read_data_item(self, data_item):
         dims = [int(d) for d in data_item.get("Dimensions").split()]
@@ -291,7 +296,7 @@ class TimeSeriesWriter:
         self.cells(cells, grid)
         self.has_mesh = True
 
-    def write_data(self, t, point_data=None, cell_data=None):
+    def write_data(self, t, point_data=None, cell_data=None, user_data=None):
         cell_data = {} if cell_data is None else cell_data
         # <Grid>
         #   <xi:include xpointer="xpointer(//Grid[@Name=&quot;TimeSeries_phi&quot;]/Grid[1]/*[self::Topology or self::Geometry])" />
@@ -316,6 +321,9 @@ class TimeSeriesWriter:
                 cell_data[name] = np.array(list(entry.values()))
         if cell_data:
             self.cell_data(cell_data, grid)
+
+        if user_data:
+            self.user_data(user_data, grid)
 
     def numpy_to_xml_string(self, data):
         if self.data_format == "XML":
@@ -471,6 +479,21 @@ class TimeSeriesWriter:
             data_item = ET.SubElement(
                 att,
                 "DataItem",
+                DataType=dt,
+                Dimensions=dim,
+                Format=self.data_format,
+                Precision=prec,
+            )
+            data_item.text = self.numpy_to_xml_string(data)
+
+    def user_data(self, user_data: dict[str, list[np.ndarray]], grid: ET.Element) -> None:
+        for name, data in user_data.items():
+            dt, prec = numpy_to_xdmf_dtype[data.dtype.name]
+            dim = " ".join([str(s) for s in data.shape])
+            data_item = ET.SubElement(
+                grid,
+                "DataItem",
+                Name=name,
                 DataType=dt,
                 Dimensions=dim,
                 Format=self.data_format,
