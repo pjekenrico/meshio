@@ -771,11 +771,12 @@ def write(filename, mesh, binary=True, compression="zlib", header_type=None):
             #   f.write("\n".join(map(fmt.format, data.reshape(-1))))
 
             # normal meshio behaviour:
-            # for item in data.reshape(-1):
-            #     f.write((fmt + "\n").format(item))
+            for item in data.reshape(-1):
+                f.write((fmt + "\n").format(item))
 
-            np.savetxt(f, data, fmt=npfmt, footer='', header='')
-            # savetxt adds a newline at the end of the file that we don't want
+            # np.savetxt(f, data, fmt=npfmt, footer='', header='')
+
+            # Remove last newline for cimlib compatibility
             import os
             NEWLINE_SIZE_IN_BYTES = 1 # 2 on Windows?
             f.seek(0, os.SEEK_END) # Go to the end of the file.
@@ -878,7 +879,7 @@ def write(filename, mesh, binary=True, compression="zlib", header_type=None):
                 new_order = meshio_to_vtk_order(v.type)
                 if new_order is not None:
                     d = d[:, new_order]
-                connectivity.append(d)
+                connectivity.append(d.flatten())
             connectivity = np.concatenate(connectivity)
 
             # offset (points to the first element of the next cell)
