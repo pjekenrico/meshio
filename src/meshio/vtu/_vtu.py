@@ -719,6 +719,8 @@ def write(filename, mesh, binary=True, compression="zlib", header_type=None):
             data[k] = dat.astype(dat.dtype.newbyteorder("="), copy=False)
     for key, data in mesh.field_data.items():
         mesh.field_data[key] = data.astype(data.dtype.newbyteorder("="), copy=False)
+    for key, data in mesh.user_data.items():
+        mesh.user_data[key] = data.astype(data.dtype.newbyteorder("="), copy=False)
 
     def numpy_to_xml_array(parent, name, data):
         vtu_type = numpy_to_vtu_type[data.dtype]
