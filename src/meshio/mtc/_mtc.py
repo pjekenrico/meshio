@@ -37,7 +37,7 @@ class MTCReader:
 
             pts = np.array(pts)
             points.append(pts.reshape(num_points, num_components))
-            first_zero = 0
+            first_zero = -1
 
             for i in range(num_cells) :
                 t = f.readline()
@@ -46,7 +46,7 @@ class MTCReader:
                 for k in range(num_components+1):
                     cells[i][k] = int(t[k])
 
-                if first_zero==0 and cells[i][-1]==0 :
+                if first_zero==-1 and cells[i][-1]==0 :
                     first_zero = i
 
         edges = cells[first_zero:]-1
@@ -79,21 +79,21 @@ class MTCReader:
         if not points:
             raise ReadError()
         self.points = np.concatenate(points)
-        self.cells = {
-                      cellname:cells,
-                      edgename:edges
-                      }
-        self.point_data = {"gmsh:dim_tags":dim_tags}
-        self.cell_data = {"gmsh:geometrical":[geom_data0,geom_data1],
-                          "gmsh:physical":[geom_data0,geom_data1]}
+        if len(cells) != 0:
+            self.cells[cellname] = cells
+        if len(edges) != 0:
+            self.cells[edgename] = edges
+        # self.point_data = {"gmsh:dim_tags":dim_tags}
+        # self.cell_data = {"gmsh:geometrical":[geom_data0,geom_data1],
+        #                   "gmsh:physical":[geom_data0,geom_data1]}
 
 def read(filename):
     reader = MTCReader(filename)
     return Mesh(
         reader.points,
         reader.cells,
-        point_data=reader.point_data,
-        cell_data=reader.cell_data
+        # point_data=reader.point_data,
+        # cell_data=reader.cell_data
     )
 
 def write(filename, mesh, binary=False, compression="zlib", header_type=None):
