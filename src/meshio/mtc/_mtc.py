@@ -3,9 +3,9 @@ from .._exceptions import CorruptionError, ReadError
 from .._mesh import CellBlock, Mesh
 from .._helpers import register_format
 
+
 class MTCReader:
-    """Helper class for reading MTC files.
-    """
+    """Helper class for reading MTC files."""
 
     def __init__(self, filename):
         self.points = {}
@@ -21,17 +21,17 @@ class MTCReader:
             num_components = int(num_components)
             num_cells = int(num_cells)
 
-            cells = np.zeros((num_cells, num_components+1), dtype=int)
+            cells = np.zeros((num_cells, num_components + 1), dtype=int)
             pts = []
 
-            for i in range(num_points) :
+            for i in range(num_points):
                 t = f.readline()
                 t = t.strip("\t\n").split()
-                if num_components == 2 :
-                    pt = [float(t[0]),float(t[1])]
-                elif num_components == 3 :
-                    pt = [float(t[0]),float(t[1]),float(t[2])]
-                else :
+                if num_components == 2:
+                    pt = [float(t[0]), float(t[1])]
+                elif num_components == 3:
+                    pt = [float(t[0]), float(t[1]), float(t[2])]
+                else:
                     raise ReadError()
                 pts.append(pt)
 
@@ -39,39 +39,45 @@ class MTCReader:
             points.append(pts.reshape(num_points, num_components))
             first_zero = -1
 
-            for i in range(num_cells) :
+            for i in range(num_cells):
                 t = f.readline()
                 t = t.strip("\t\n").split()
+                if i == 0:
+                    while t == []:
+                        t = f.readline()
+                        t = t.strip("\t\n").split()
 
-                for k in range(num_components+1):
+                for k in range(num_components + 1):
                     cells[i][k] = int(t[k])
 
-                if first_zero==-1 and cells[i][-1]==0 :
+                if first_zero == -1 and cells[i][-1] == 0:
                     first_zero = i
 
-        edges = cells[first_zero:]-1
-        edges = edges[:,:-1]
-        cells = cells[:first_zero]-1
+        edges = cells[first_zero:] - 1
+        edges = edges[:, :-1]
+        cells = cells[:first_zero] - 1
 
-        indices_edges = np.sort(edges.flatten(), axis=0) # creates a copy
+        indices_edges = np.sort(edges.flatten(), axis=0)  # creates a copy
         indices_edges = np.unique(indices_edges, axis=0)[1:]
         mask = np.ones(num_points, dtype=bool)
         mask[indices_edges,] = False
-        indices_cells = np.linspace(0,num_points,num_points,dtype=int,endpoint=False)
+        indices_cells = np.linspace(
+            0, num_points, num_points, dtype=int, endpoint=False
+        )
         indices_cells = indices_cells[mask]
-        dim_tags = np.zeros((num_points,2),dtype=int)
+        dim_tags = np.zeros((num_points, 2), dtype=int)
 
-        if num_components == 2 :
+        if num_components == 2:
             cellname = "triangle"
             edgename = "line"
-            dim_tags[indices_cells] = np.array([2,0])
-            dim_tags[indices_edges] = np.array([1,1])
-        elif num_components == 3 :
+            dim_tags[indices_cells] = np.array([2, 0])
+            dim_tags[indices_edges] = np.array([1, 1])
+        elif num_components == 3:
             cellname = "tetra"
             edgename = "triangle"
-            dim_tags[indices_cells] = np.array([3,0])
-            dim_tags[indices_edges] = np.array([2,1])
-        
+            dim_tags[indices_cells] = np.array([3, 0])
+            dim_tags[indices_edges] = np.array([2, 1])
+
         geom_data0 = np.zeros((len(cells)))
         geom_data1 = np.ones((len(edges)))
 
@@ -87,6 +93,7 @@ class MTCReader:
         # self.cell_data = {"gmsh:geometrical":[geom_data0,geom_data1],
         #                   "gmsh:physical":[geom_data0,geom_data1]}
 
+
 def read(filename):
     reader = MTCReader(filename)
     return Mesh(
@@ -96,6 +103,7 @@ def read(filename):
         # cell_data=reader.cell_data
     )
 
+
 def write(filename, mesh, binary=False, compression="zlib", header_type=None):
 
     if mesh.points.shape[1] == 2:
@@ -103,21 +111,21 @@ def write(filename, mesh, binary=False, compression="zlib", header_type=None):
     else:
         points = mesh.points
 
-    tetra = np.array([],dtype=int)
-    triangle = np.array([],dtype=int)
-    line = np.array([],dtype=int)
+    tetra = np.array([], dtype=int)
+    triangle = np.array([], dtype=int)
+    line = np.array([], dtype=int)
     tet = False
     tri = False
 
     for cell_block in mesh.cells:
         cell_type = cell_block.type
         data = cell_block.data
-        if cell_type=="triangle":
-            tri=True
-            triangle = np.concatenate((triangle,data.flatten()))
-        if cell_type=="tetra":
-            tet=True
-            tetra = np.concatenate((tetra,data.flatten()))
+        if cell_type == "triangle":
+            tri = True
+            triangle = np.concatenate((triangle, data.flatten()))
+        if cell_type == "tetra":
+            tet = True
+            tetra = np.concatenate((tetra, data.flatten()))
 
     if "dim" in mesh.user_data.keys():
         if float(mesh.user_data["dim"]) < 3:
@@ -126,10 +134,10 @@ def write(filename, mesh, binary=False, compression="zlib", header_type=None):
     if tet:
         dim = 3
         triangle = np.array([])
-        tetra = tetra.reshape((-1, 4))+1
+        tetra = tetra.reshape((-1, 4)) + 1
     elif tri:
         tetra = np.array([])
-        triangle = triangle.reshape((-1, 3))+1
+        triangle = triangle.reshape((-1, 3)) + 1
         if np.all(points[:, 0] == points[0, 0]):
             dim = 2
             points = points[:, 1:]
@@ -142,10 +150,8 @@ def write(filename, mesh, binary=False, compression="zlib", header_type=None):
         else:
             dim = 2.5
     else:
-        raise ValueError(
-                    "No tetra, and no triangle, cannot export to mtc"
-                )
-    
+        raise ValueError("No tetra, and no triangle, cannot export to mtc")
+
     # Apparently Cimlib prefers normals looking down in 2D
     # If normals are still wrong after that, there may be foldovers in your mesh
     if dim == 2:
@@ -263,5 +269,6 @@ def write(filename, mesh, binary=False, compression="zlib", header_type=None):
     print("Done.")
 
     return
+
 
 register_format("mtc", [".t"], read, {"mtc": write})
