@@ -61,9 +61,7 @@ class MTCReader:
         indices_edges = np.unique(indices_edges, axis=0)[1:]
         mask = np.ones(num_points, dtype=bool)
         mask[indices_edges,] = False
-        indices_cells = np.linspace(
-            0, num_points, num_points, dtype=int, endpoint=False
-        )
+        indices_cells = np.linspace(0, num_points, num_points, dtype=int, endpoint=False)
         indices_cells = indices_cells[mask]
         dim_tags = np.zeros((num_points, 2), dtype=int)
 
@@ -104,12 +102,14 @@ def read(filename):
     )
 
 
-def write(filename, mesh, binary=False, compression="zlib", header_type=None):
+def write(filename, mesh, dimension=None, precision: int = 17):
 
     if mesh.points.shape[1] == 2:
         points = np.column_stack([mesh.points, np.zeros_like(mesh.points[:, 0])])
     else:
         points = mesh.points
+
+    prec = str(int(precision))
 
     tetra = np.array([], dtype=int)
     triangle = np.array([], dtype=int)
@@ -127,8 +127,8 @@ def write(filename, mesh, binary=False, compression="zlib", header_type=None):
             tet = True
             tetra = np.concatenate((tetra, data.flatten()))
 
-    if "dim" in mesh.user_data.keys():
-        if float(mesh.user_data["dim"]) < 3:
+    if dimension:
+        if float(dimension) < 3:
             tet = False
 
     if tet:
@@ -171,9 +171,7 @@ def write(filename, mesh, binary=False, compression="zlib", header_type=None):
         tris4 = tetra[:, [1, 2, 3]]
 
         tris = np.concatenate((tris1, tris2, tris3, tris4), axis=0)
-        tris_sorted = np.sort(
-            tris, axis=1
-        )  # creates a copy, may be source of memory error
+        tris_sorted = np.sort(tris, axis=1)  # creates a copy, may be source of memory error
         tris_sorted, uniq_idx, uniq_cnt = np.unique(
             tris_sorted, axis=0, return_index=True, return_counts=True
         )
@@ -185,9 +183,7 @@ def write(filename, mesh, binary=False, compression="zlib", header_type=None):
         lin3 = triangle[:, [1, 2]]
 
         lin = np.concatenate((lin1, lin2, lin3), axis=0)
-        lin_sorted = np.sort(
-            lin, axis=1
-        )  # creates a copy, may be source of memory error
+        lin_sorted = np.sort(lin, axis=1)  # creates a copy, may be source of memory error
         lin_sorted, uniq_idx, uniq_cnt = np.unique(
             lin_sorted, axis=0, return_index=True, return_counts=True
         )
@@ -195,9 +191,7 @@ def write(filename, mesh, binary=False, compression="zlib", header_type=None):
 
     # Detecting unused nodes
     to_delete = np.arange(1, len(points) + 1)  # Every node index
-    used_elems = np.unique(
-        np.concatenate((tetra.flat, triangle.flat))
-    )  # Every index of USED nodes
+    used_elems = np.unique(np.concatenate((tetra.flat, triangle.flat)))  # Every index of USED nodes
 
     bools_keep = np.in1d(to_delete, used_elems)
     to_delete = to_delete[~bools_keep]
@@ -231,30 +225,19 @@ def write(filename, mesh, binary=False, compression="zlib", header_type=None):
     print("Writing .t file...")
 
     with open(filename, "w") as fo:
-        lig = (
-            str(len(points))
-            + " "
-            + str(dim)
-            + " "
-            + str(nb_elems)
-            + " "
-            + str(dim + 1)
-            + "\n"
-        )
+        lig = str(len(points)) + " " + str(dim) + " " + str(nb_elems) + " " + str(dim + 1) + "\n"
         if dim == 2.5:
             lig = str(len(points)) + " 3 " + str(nb_elems) + " 4\n"
         fo.write(lig)
 
         for node in points:
-            fo.write("{0:.16f} {1:.16f}".format(node[0], node[1]))
+            fo.write(("{0:." + prec + "g} {1:." + prec + "g}").format(node[0], node[1]))
             if dim == 3 or dim == 2.5:
-                fo.write(" {0:.16f}".format(node[2]))
+                fo.write((" {0:." + prec + "g}").format(node[2]))
             fo.write(" \n")
 
         for e in tetra:
-            fo.write(
-                str(e[0]) + " " + str(e[1]) + " " + str(e[2]) + " " + str(e[3]) + " \n"
-            )
+            fo.write(str(e[0]) + " " + str(e[1]) + " " + str(e[2]) + " " + str(e[3]) + " \n")
 
         for e in triangle:
             if dim == 3 or dim == 2.5:
