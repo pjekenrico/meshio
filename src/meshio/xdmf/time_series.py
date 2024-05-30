@@ -29,16 +29,16 @@ class TimeSeriesReader:
 
         parser = ET.XMLParser()
         tree = ET.parse(self.filename, parser)
-        root = tree.getroot()
+        self.root = tree.getroot()
 
-        if root.tag != "Xdmf":
+        if self.root.tag != "Xdmf":
             raise ReadError()
 
-        version = root.attrib["Version"]
+        version = self.root.attrib["Version"]
         if version.split(".")[0] != "3":
             raise ReadError(f"Unknown XDMF version {version}.")
 
-        domains = list(root)
+        domains = list(self.root)
         if len(domains) != 1:
             raise ReadError()
         self.domain = domains[0]
@@ -48,19 +48,19 @@ class TimeSeriesReader:
         grids = list(self.domain)
 
         # find the collection grid
-        collection_grid = None
+        self.collection_grid = None
         for g in grids:
             if g.get("GridType") == "Collection":
-                collection_grid = g
-        if collection_grid is None:
+                self.collection_grid = g
+        if self.collection_grid is None:
             raise ReadError("Couldn't find the mesh grid")
-        if collection_grid.tag != "Grid":
+        if self.collection_grid.tag != "Grid":
             raise ReadError()
-        if collection_grid.get("CollectionType") != "Temporal":
+        if self.collection_grid.get("CollectionType") != "Temporal":
             raise ReadError()
 
         # get the collection at once
-        self.collection = list(collection_grid)
+        self.collection = list(self.collection_grid)
         self.num_steps = len(self.collection)
         self.cells = None
         self.hdf5_files = {}
@@ -236,39 +236,68 @@ class TimeSeriesReader:
 
 
 class TimeSeriesWriter:
-    def __init__(self, filename, data_format: str = "HDF") -> None:
+    def __init__(self, filename, data_format: str = "HDF", add: bool = False) -> None:
         if data_format not in ["XML", "Binary", "HDF"]:
             raise WriteError(
-                "Unknown XDMF data format "
-                f"'{data_format}' (use 'XML', 'Binary', or 'HDF'.)"
+                "Unknown XDMF data format " f"'{data_format}' (use 'XML', 'Binary', or 'HDF'.)"
             )
 
         self.filename = pathlib.Path(filename)
         self.data_format = data_format
         self.data_counter = 0
-
-        self.xdmf_file = ET.Element("Xdmf", Version="3.0")
-
-        self.domain = ET.SubElement(self.xdmf_file, "Domain")
-        self.collection = ET.SubElement(
-            self.domain,
-            "Grid",
-            Name="TimeSeries_meshio",
-            GridType="Collection",
-            CollectionType="Temporal",
-        )
-
-        ET.register_namespace("xi", "https://www.w3.org/2001/XInclude/")
-
         self.has_mesh = False
         self.mesh_name = "mesh"
+        self.add = add
+
+        if add:
+            reader = TimeSeriesReader(filename)
+            self.xdmf_file = reader.root
+            self.domain = reader.domain
+            self.collection = reader.collection_grid
+            self.has_mesh = True
+            for coll in reader.collection:
+                for c in list(coll):
+                    if c.tag == "Attribute":
+                        if len(list(c)) != 1:
+                            raise ReadError()
+                        data_item = list(c)[0]
+                        data_name = data_item.text
+                    elif c.tag == "DataItem":
+                        data_name = c.text
+                    else:
+                        # skip the xi:included mesh
+                        continue
+                    if data_name.startswith(
+                        os.path.basename(self.filename.stem + ".h5") + ":/data"
+                    ):
+                        counter = data_name.split("/data")[-1]
+                        if counter.isdigit():
+                            counter = int(counter)
+                            if counter > self.data_counter:
+                                self.data_counter = counter
+            self.data_counter += 1
+        else:
+            self.xdmf_file = ET.Element("Xdmf", Version="3.0")
+            self.domain = ET.SubElement(self.xdmf_file, "Domain")
+            self.collection = ET.SubElement(
+                self.domain,
+                "Grid",
+                Name="TimeSeries_meshio",
+                GridType="Collection",
+                CollectionType="Temporal",
+            )
+
+        ET.register_namespace("xi", "https://www.w3.org/2001/XInclude/")
 
     def __enter__(self):
         if self.data_format == "HDF":
             import h5py
 
             self.h5_filename = self.filename.stem + ".h5"
-            self.h5_file = h5py.File(self.h5_filename, "w")
+            if self.add:
+                self.h5_file = h5py.File(self.h5_filename, "r+")
+            else:
+                self.h5_file = h5py.File(self.h5_filename, "w")
         return self
 
     def __exit__(self, *_):
@@ -289,9 +318,7 @@ class TimeSeriesWriter:
         #     <DataItem Dimensions="8457 2" Format="HDF">maxwell.h5:/Mesh/0/mesh/geometry</DataItem>
         #   </Geometry>
         # </Grid>
-        grid = ET.SubElement(
-            self.domain, "Grid", Name=self.mesh_name, GridType="Uniform"
-        )
+        grid = ET.SubElement(self.domain, "Grid", Name=self.mesh_name, GridType="Uniform")
         self.points(grid, np.asarray(points))
         self.cells(cells, grid)
         self.has_mesh = True
@@ -424,9 +451,7 @@ class TimeSeriesWriter:
             cd = np.concatenate(
                 [
                     # prepend column with xdmf type index
-                    np.insert(
-                        c.data, 0, meshio_type_to_xdmf_index[c.type], axis=1
-                    ).flatten()
+                    np.insert(c.data, 0, meshio_type_to_xdmf_index[c.type], axis=1).flatten()
                     for c in cell_blocks
                 ]
             )
@@ -462,9 +487,7 @@ class TimeSeriesWriter:
             )
             data_item.text = self.numpy_to_xml_string(data)
 
-    def cell_data(
-        self, cell_data: dict[str, list[np.ndarray]], grid: ET.Element
-    ) -> None:
+    def cell_data(self, cell_data: dict[str, list[np.ndarray]], grid: ET.Element) -> None:
         raw = raw_from_cell_data(cell_data)
         for name, data in raw.items():
             att = ET.SubElement(
@@ -500,3 +523,40 @@ class TimeSeriesWriter:
                 Precision=prec,
             )
             data_item.text = self.numpy_to_xml_string(data)
+
+
+class TimeSeriesModifier:
+    def __init__(self, filename, data_format: str = "HDF") -> None:
+
+        self.filename = pathlib.Path(filename)
+        self.data_format = data_format
+        self.data_counter = 0
+        self.has_mesh = False
+        self.mesh_name = "mesh"
+
+        reader = TimeSeriesReader(filename)
+        self.xdmf_file = reader.root
+        self.domain = reader.domain
+        self.collection = reader.collection_grid
+        self.has_mesh = True
+        for coll in reader.collection:
+            for c in list(coll):
+                if c.tag == "Attribute":
+                    if len(list(c)) != 1:
+                        raise ReadError()
+                    data_item = list(c)[0]
+                    data_name = data_item.text
+                elif c.tag == "DataItem":
+                    data_name = c.text
+                else:
+                    # skip the xi:included mesh
+                    continue
+                if data_name.startswith(os.path.basename(self.filename.stem + ".h5") + ":/data"):
+                    counter = data_name.split("/data")[-1]
+                    if counter.isdigit():
+                        counter = int(counter)
+                        if counter > self.data_counter:
+                            self.data_counter = counter
+        self.data_counter += 1
+
+        ET.register_namespace("xi", "https://www.w3.org/2001/XInclude/")
