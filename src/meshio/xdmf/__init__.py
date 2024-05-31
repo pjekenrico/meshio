@@ -4,6 +4,6 @@ https://xdmf.org/index.php/XDMF_Model_and_Format
 """
 
 from .main import read, write
-from .time_series import TimeSeriesReader, TimeSeriesWriter
+from .time_series import TimeSeriesReader, TimeSeriesWriter, TimeSeriesModifier
 
-__all__ = ["read", "write", "TimeSeriesWriter", "TimeSeriesReader"]
+__all__ = ["read", "write", "TimeSeriesWriter", "TimeSeriesReader", "TimeSeriesModifier"]

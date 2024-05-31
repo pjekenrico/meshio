@@ -255,7 +255,7 @@ class TimeSeriesWriter:
             self.domain = reader.domain
             self.collection = reader.collection_grid
             self.has_mesh = True
-            for coll in reader.collection:
+            for coll in list(self.collection):
                 for c in list(coll):
                     if c.tag == "Attribute":
                         if len(list(c)) != 1:
@@ -530,33 +530,59 @@ class TimeSeriesModifier:
 
         self.filename = pathlib.Path(filename)
         self.data_format = data_format
-        self.data_counter = 0
-        self.has_mesh = False
-        self.mesh_name = "mesh"
 
         reader = TimeSeriesReader(filename)
         self.xdmf_file = reader.root
         self.domain = reader.domain
         self.collection = reader.collection_grid
-        self.has_mesh = True
-        for coll in reader.collection:
-            for c in list(coll):
-                if c.tag == "Attribute":
-                    if len(list(c)) != 1:
+
+        ET.register_namespace("xi", "https://www.w3.org/2001/XInclude/")
+
+    def __enter__(self):
+        if self.data_format == "HDF":
+            import h5py
+
+            self.h5_filename = self.filename.stem + ".h5"
+            self.h5_file = h5py.File(self.h5_filename, "r+")
+        return self
+
+    def __exit__(self, *_):
+        write_xml(self.filename, self.xdmf_file)
+        if self.data_format == "HDF":
+            import subprocess
+
+            self.h5_file.close()
+
+            old_h5_filename = os.getcwd() + "/" + self.h5_filename
+            new_h5_filename = os.getcwd() + "/" + self.filename.stem + "small.h5"
+            subprocess.run(["h5repack", old_h5_filename, new_h5_filename])
+            subprocess.run(["mv", new_h5_filename, old_h5_filename])
+
+    def del_fields(self, fields):
+        datasets = []
+        todel_fields = []
+
+        if isinstance(fields, str):
+            fields = [fields]
+
+        for timestep in list(self.collection):
+            for field in list(timestep):
+                if field.tag == "Attribute" and field.get("Name") in fields:
+                    if len(list(field)) != 1:
                         raise ReadError()
-                    data_item = list(c)[0]
+                    data_item = list(field)[0]
                     data_name = data_item.text
-                elif c.tag == "DataItem":
-                    data_name = c.text
+                elif field.tag == "DataItem" and field.get("Name") in fields:
+                    data_name = field.text
                 else:
                     # skip the xi:included mesh
                     continue
-                if data_name.startswith(os.path.basename(self.filename.stem + ".h5") + ":/data"):
-                    counter = data_name.split("/data")[-1]
-                    if counter.isdigit():
-                        counter = int(counter)
-                        if counter > self.data_counter:
-                            self.data_counter = counter
-        self.data_counter += 1
+                todel_fields.append(field)
+                datasets.append(data_name.split("/")[-1])
+            for f in todel_fields:
+                timestep.remove(f)
+            todel_fields = []
 
-        ET.register_namespace("xi", "https://www.w3.org/2001/XInclude/")
+        if self.data_format == "HDF":
+            for data_name in datasets:
+                del self.h5_file[data_name]
