@@ -359,7 +359,7 @@ class TimeSeriesWriter:
             np.savetxt(s, data.flatten(), fmt)
             return s.getvalue().decode()
         elif self.data_format == "Binary":
-            bin_filename = f"{self.filename.with_suffix("")}{self.data_counter}.bin"
+            bin_filename = f"{self.filename.with_suffix('')}{self.data_counter}.bin"
             self.data_counter += 1
             # write binary data to file
             with open(bin_filename, "wb") as f:
