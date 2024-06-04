@@ -268,7 +268,7 @@ class TimeSeriesWriter:
                         # skip the xi:included mesh
                         continue
                     if data_name.startswith(
-                        os.path.basename(self.filename.stem + ".h5") + ":/data"
+                        os.path.basename(self.filename.with_suffix(".h5")) + ":/data"
                     ):
                         counter = data_name.split("/data")[-1]
                         if counter.isdigit():
@@ -293,7 +293,7 @@ class TimeSeriesWriter:
         if self.data_format == "HDF":
             import h5py
 
-            self.h5_filename = self.filename.stem + ".h5"
+            self.h5_filename = str(self.filename.with_suffix(".h5"))
             if self.add:
                 self.h5_file = h5py.File(self.h5_filename, "r+")
             else:
@@ -359,7 +359,7 @@ class TimeSeriesWriter:
             np.savetxt(s, data.flatten(), fmt)
             return s.getvalue().decode()
         elif self.data_format == "Binary":
-            bin_filename = f"{self.filename.stem}{self.data_counter}.bin"
+            bin_filename = f"{self.filename.with_suffix("")}{self.data_counter}.bin"
             self.data_counter += 1
             # write binary data to file
             with open(bin_filename, "wb") as f:
@@ -542,7 +542,7 @@ class TimeSeriesModifier:
         if self.data_format == "HDF":
             import h5py
 
-            self.h5_filename = self.filename.stem + ".h5"
+            self.h5_filename = str(self.filename.with_suffix(".h5"))
             self.h5_file = h5py.File(self.h5_filename, "r+")
         return self
 
@@ -554,7 +554,7 @@ class TimeSeriesModifier:
             self.h5_file.close()
 
             old_h5_filename = os.getcwd() + "/" + self.h5_filename
-            new_h5_filename = os.getcwd() + "/" + self.filename.stem + "small.h5"
+            new_h5_filename = os.getcwd() + "/" + self.filename.with_suffix("") + "small.h5"
             subprocess.run(["h5repack", old_h5_filename, new_h5_filename])
             subprocess.run(["mv", new_h5_filename, old_h5_filename])
 
