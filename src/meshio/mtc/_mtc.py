@@ -190,7 +190,7 @@ def write(filename, mesh, dimension=None, precision: int = 17):
         line = lin[uniq_idx][uniq_cnt == 1]
 
     # Detecting unused nodes
-    to_delete = np.arange(1, len(points) + 1)  # Every node index
+    to_delete = np.arange(0, len(points))  # Every node index
     used_elems = np.unique(np.concatenate((tetra.flat, triangle.flat)))  # Every index of USED nodes
 
     bools_keep = np.in1d(to_delete, used_elems)
