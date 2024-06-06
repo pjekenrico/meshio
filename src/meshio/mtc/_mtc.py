@@ -134,10 +134,10 @@ def write(filename, mesh, dimension=None, precision: int = 17):
     if tet:
         dim = 3
         triangle = np.array([])
-        tetra = tetra.reshape((-1, 4)) + 1
+        tetra = tetra.reshape((-1, 4))
     elif tri:
         tetra = np.array([])
-        triangle = triangle.reshape((-1, 3)) + 1
+        triangle = triangle.reshape((-1, 3))
         if np.all(points[:, 0] == points[0, 0]):
             dim = 2
             points = points[:, 1:]
@@ -223,6 +223,11 @@ def write(filename, mesh, dimension=None, precision: int = 17):
     ############
 
     print("Writing .t file...")
+
+    # Correction for mtc numbering
+    tetra += 1
+    triangle += 1
+    line += 1
 
     with open(filename, "w") as fo:
         lig = str(len(points)) + " " + str(dim) + " " + str(nb_elems) + " " + str(dim + 1) + "\n"
