@@ -331,7 +331,14 @@ class Mesh:
                 for i, cc in enumerate(c):
                     if cc is None:
                         continue
-                    arr[cc] = i
+                    # Sometimes cc gives values out of arr range
+                    try:
+                        arr[cc] = i
+                    except:
+                        warn(
+                            f"Cell sets are ill-defined : {cc} out of range {len(arr)}"
+                        )
+                        continue
                 intfun.append(arr)
 
             for item in intfun:
