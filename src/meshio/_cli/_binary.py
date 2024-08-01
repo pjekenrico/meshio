@@ -78,5 +78,5 @@ def binary(args):
 
         flexible_args = list(zip(args.infile, input_formats))
 
-        with mp.Pool(processes=4) as pool:
+        with mp.Pool(processes=16) as pool:
             pool.map(parallel_func, flexible_args)
