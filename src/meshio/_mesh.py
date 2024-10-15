@@ -92,6 +92,9 @@ class CellBlock:
         self.type = cell_type
         self.data = data
 
+        if cell_type not in topological_dimension:
+            raise ValueError(f"Unknown cell type '{cell_type}'. Choose from {topological_dimension.keys()}")
+
         if cell_type.startswith("polyhedron"):
             self.dim = 3
         else:
