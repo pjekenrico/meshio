@@ -175,6 +175,13 @@ class Mesh:
 
         # assert cell data consistency and convert to numpy arrays
         for key, data in self.cell_data.items():
+            for k in range(len(data)):
+                if not isinstance(data[k], (list, np.ndarray)):
+                    raise ValueError(
+                        "Cell data must be a list of lists "
+                        + f"corresponding to each cell type. "
+                        + f"Type '{type(data[k])}' is not list.")
+
             if len(data) != len(cells):
                 raise ValueError(
                     f"Incompatible cell data '{key}'. "
