@@ -37,7 +37,7 @@ def read(filename):
         num_triangles = np.fromfile(f, count=1, dtype="<u4")[0]
         # for each triangle, one has 3 float32 (facet normal), 9 float32 (facet),
         # and 1 int16 (attribute count), 50 bytes in total
-        if 84 + num_triangles * 50 == filesize_bytes:
+        if np.uint64(84) + np.uint64(num_triangles) * np.uint64(50) == filesize_bytes:
             return _read_binary(f, num_triangles)
 
         # rewind and skip header
