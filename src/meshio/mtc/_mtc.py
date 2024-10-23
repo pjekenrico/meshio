@@ -105,7 +105,7 @@ def read(filename):
 def write(filename, mesh, dimension=None, precision: int = 17):
 
     if mesh.points.shape[1] == 2:
-        points = np.column_stack([mesh.points, np.zeros_like(mesh.points[:, 0])])
+        points = np.column_stack([mesh.points, np.zeros_like(mesh.points[:, 0])], dtype=float)
     else:
         points = mesh.points
 
@@ -122,10 +122,10 @@ def write(filename, mesh, dimension=None, precision: int = 17):
         data = cell_block.data
         if cell_type == "triangle":
             tri = True
-            triangle = np.concatenate((triangle, data.flatten()))
+            triangle = np.concatenate((triangle, data.flatten()), dtype=int)
         if cell_type == "tetra":
             tet = True
-            tetra = np.concatenate((tetra, data.flatten()))
+            tetra = np.concatenate((tetra, data.flatten()), dtype=int)
 
     if dimension:
         if float(dimension) < 3:
@@ -133,10 +133,10 @@ def write(filename, mesh, dimension=None, precision: int = 17):
 
     if tet:
         dim = 3
-        triangle = np.array([])
+        triangle = np.array([], dtype=int)
         tetra = tetra.reshape((-1, 4))
     elif tri:
-        tetra = np.array([])
+        tetra = np.array([], dtype=int)
         triangle = triangle.reshape((-1, 3))
         if np.all(points[:, 0] == points[0, 0]):
             dim = 2
@@ -189,25 +189,22 @@ def write(filename, mesh, dimension=None, precision: int = 17):
         )
         line = lin[uniq_idx][uniq_cnt == 1]
 
-    # Detecting unused nodes
-    to_delete = np.arange(0, len(points))  # Every node index
-    used_elems = np.unique(np.concatenate((tetra.flat, triangle.flat)))  # Every index of USED nodes
+    # Detecting used nodes
+    used_elems = np.unique(np.concatenate((tetra.flatten(), triangle.flatten())))  # sorted
+    bools_keep = np.zeros(len(points), dtype=bool)
+    bools_keep[used_elems] = True
 
-    bools_keep = np.in1d(to_delete, used_elems)
-    to_delete = to_delete[~bools_keep]
-    del used_elems
-
-    # Deleting unused nodes
+    # Deleting unused nodes and reindexing
     points = points[bools_keep]
-    del bools_keep
+    new_indices = np.cumsum(bools_keep) - 1
 
     if dim == 3 or dim == 2.5:
-        tetra.flat -= np.searchsorted(to_delete, tetra.flat, side="left")
-        triangle.flat -= np.searchsorted(to_delete, triangle.flat, side="left")
+        tetra = new_indices[tetra]
+        triangle = new_indices[triangle]
 
     if dim == 2:
-        triangle.flat -= np.searchsorted(to_delete, triangle.flat, side="left")
-        line.flat -= np.searchsorted(to_delete, line.flat, side="left")
+        triangle = new_indices[triangle]
+        line = new_indices[line]
 
     ############
 
