@@ -3,6 +3,14 @@ from .._exceptions import CorruptionError, ReadError
 from .._mesh import CellBlock, Mesh
 from .._helpers import register_format
 
+def skip_empty_lines(f):
+    while True:
+        pos = f.tell()
+        line = f.readline().strip()
+        if line:
+            f.seek(pos)
+            break
+    return f
 
 class MTCReader:
     """Helper class for reading MTC files."""
@@ -13,83 +21,64 @@ class MTCReader:
         self.point_data = {}
         self.cell_data = {}
 
-        points = []
-
         with open(filename) as f:
-            num_points, num_components, num_cells, _ = f.readline().split()
-            num_points = int(num_points)
-            num_components = int(num_components)
-            num_cells = int(num_cells)
-
+            # Parse header
+            num_points, num_components, num_cells, _ = map(int, f.readline().split())
             cells = np.zeros((num_cells, num_components + 1), dtype=int)
-            pts = []
+            f = skip_empty_lines(f)
 
-            for i in range(num_points):
-                t = f.readline()
-                t = t.strip("\t\n").split()
-                if num_components == 2:
-                    pt = [float(t[0]), float(t[1])]
-                elif num_components == 3:
-                    pt = [float(t[0]), float(t[1]), float(t[2])]
-                else:
-                    raise ReadError()
-                pts.append(pt)
+            # Read points
+            points = [list(map(float, f.readline().split())) for _ in range(num_points)]
+            points = np.array(points).reshape(num_points, num_components)
+            f = skip_empty_lines(f)
 
-            pts = np.array(pts)
-            points.append(pts.reshape(num_points, num_components))
+            # Read cells
             first_zero = -1
-
             for i in range(num_cells):
-                t = f.readline()
-                t = t.strip("\t\n").split()
-                if i == 0:
-                    while t == []:
-                        t = f.readline()
-                        t = t.strip("\t\n").split()
-
-                for k in range(num_components + 1):
-                    cells[i][k] = int(t[k])
-
-                if first_zero == -1 and cells[i][-1] == 0:
+                line = list(map(int, f.readline().split()))
+                cells[i] = line
+                if first_zero == -1 and line[-1] == 0:
                     first_zero = i
 
-        edges = cells[first_zero:] - 1
-        edges = edges[:, :-1]
+        # Split into cells and edges
+        edges = cells[first_zero:, :-1] - 1
         cells = cells[:first_zero] - 1
 
-        indices_edges = np.sort(edges.flatten(), axis=0)  # creates a copy
-        indices_edges = np.unique(indices_edges, axis=0)[1:]
+        # Identify unique edges
+        indices_edges = np.unique(np.sort(edges.flatten()))
         mask = np.ones(num_points, dtype=bool)
-        mask[indices_edges,] = False
-        indices_cells = np.linspace(0, num_points, num_points, dtype=int, endpoint=False)
-        indices_cells = indices_cells[mask]
-        dim_tags = np.zeros((num_points, 2), dtype=int)
+        mask[indices_edges] = False
+        indices_cells = np.arange(num_points)[mask]
 
+        # Assign tags
+        dim_tags = np.zeros((num_points, 2), dtype=int)
         if num_components == 2:
-            cellname = "triangle"
-            edgename = "line"
-            dim_tags[indices_cells] = np.array([2, 0])
-            dim_tags[indices_edges] = np.array([1, 1])
+            cellname, edgename = "triangle", "line"
+            dim_tags[indices_cells] = [2, 0]
+            dim_tags[indices_edges] = [1, 1]
         elif num_components == 3:
-            cellname = "tetra"
-            edgename = "triangle"
-            dim_tags[indices_cells] = np.array([3, 0])
-            dim_tags[indices_edges] = np.array([2, 1])
+            cellname, edgename = "tetra", "triangle"
+            dim_tags[indices_cells] = [3, 0]
+            dim_tags[indices_edges] = [2, 1]
 
         geom_data0 = np.zeros((len(cells)))
         geom_data1 = np.ones((len(edges)))
+        # you can have edges without cells
+        geom_phys = [geom_data0, geom_data1] if len(cells) > 0 else [geom_data1]
 
-        # Now merge across pieces
-        if not points:
-            raise ReadError()
-        self.points = np.concatenate(points)
-        if len(cells) != 0:
+        # Merge points and cells
+        if len(points) == 0:
+            raise ReadError("No points found in file.")
+        self.points = points
+        if len(cells) > 0:
             self.cells[cellname] = cells
-        if len(edges) != 0:
+        if len(edges) > 0:
             self.cells[edgename] = edges
-        # self.point_data = {"gmsh:dim_tags":dim_tags}
-        # self.cell_data = {"gmsh:geometrical":[geom_data0,geom_data1],
-        #                   "gmsh:physical":[geom_data0,geom_data1]}
+        self.point_data = {"gmsh:dim_tags": dim_tags}
+        self.cell_data = {
+            "gmsh:geometrical": geom_phys,
+            "gmsh:physical": geom_phys,
+        }
 
 
 def read(filename):
@@ -97,8 +86,8 @@ def read(filename):
     return Mesh(
         reader.points,
         reader.cells,
-        # point_data=reader.point_data,
-        # cell_data=reader.cell_data
+        point_data=reader.point_data,
+        cell_data=reader.cell_data,
     )
 
 
