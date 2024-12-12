@@ -327,6 +327,9 @@ def write_ascii_file(filename, mesh, float_fmt=".16e"):
                 f"Picking {labels_key}, skipping {string}."
             )
         labels = mesh.point_data[labels_key] if labels_key else np.ones(n, dtype=int)
+        if labels.shape != (n,):
+            labels = np.ones(n, dtype=int)
+            print("Could not retrieve labels from point data.")
 
         fmt = " ".join(["{:" + float_fmt + "}"] * d) + " {:d}\n"
         for x, label in zip(mesh.points, labels):
@@ -351,29 +354,46 @@ def write_ascii_file(filename, mesh, float_fmt=".16e"):
                 f"Picking {labels_key}, skipping {string}."
             )
 
+        cells = {}
+        labels = {}
         for k, cell_block in enumerate(mesh.cells):
-            cell_type = cell_block.type
-            data = cell_block.data
-            try:
-                medit_name, num = medit_from_meshio[cell_type]
-            except KeyError:
-                msg = f"MEDIT's mesh format doesn't know {cell_type} cells. Skipping."
+            if cell_block.type not in medit_from_meshio:
+                msg = f"MEDIT's mesh format doesn't know {cell_block.type} cells. Skipping."
                 warn(msg)
                 continue
+            if cell_block.type in cells:
+                cells[cell_block.type] = np.concatenate(
+                    [cells[cell_block.type], cell_block.data]
+                )
+                # pick out cell data
+                labels[cell_block.type] = np.concatenate(
+                    [
+                        labels[cell_block.type],
+                        mesh.cell_data[labels_key][k]
+                        if labels_key
+                        else np.ones(len(cell_block.data), dtype=cell_block.data.dtype)
+                    ]
+                )
+            else:
+                cells[cell_block.type] = cell_block.data
+                # pick out cell data
+                labels[cell_block.type] = (
+                        mesh.cell_data[labels_key][k]
+                        if labels_key
+                        else np.ones(len(cell_block.data), dtype=cell_block.data.dtype)
+                )
+
+        for cell_type, data in cells.items():
+            medit_name, num = medit_from_meshio[cell_type]
             fh.write(b"\n")
             fh.write(f"{medit_name}\n".encode())
             fh.write(f"{len(data)}\n".encode())
 
-            # pick out cell data
-            labels = (
-                mesh.cell_data[labels_key][k]
-                if labels_key
-                else np.ones(len(data), dtype=data.dtype)
-            )
+            lbls = labels[cell_type]
 
             fmt = " ".join(["{:d}"] * (num + 1)) + "\n"
             # adapt 1-base
-            for d, label in zip(data + 1, labels):
+            for d, label in zip(data + 1, lbls):
                 fh.write(fmt.format(*d, label).encode())
 
         fh.write(b"\nEnd\n")
