@@ -16,7 +16,7 @@ def add_args(parser):
         default=None,
     )
 
-    parser.add_argument("infile", type=str, nargs='*', help="mesh file to convert")
+    parser.add_argument("infile", type=str, nargs="*", help="mesh file to convert")
 
 
 def ascii(args):
@@ -33,6 +33,12 @@ def ascii(args):
 
         size = os.stat(file).st_size
         print(f"File size before: {size / 1024 ** 2:.2f} MB")
+
+        if fmt == "vtu":
+            if vtu.check_data_format(file, "ascii"):
+                print(f"{file} is already ascii")
+                return
+
         mesh = read(file, file_format=args.input_format)
 
         # # Some converters (like VTK) require `points` to be contiguous.
