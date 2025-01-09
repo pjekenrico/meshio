@@ -20,11 +20,17 @@ def add_args(parser):
 
 
 def parallel_func(inputs) -> None:
-    
+
     file, input_format = inputs
 
     size = os.stat(file).st_size
     print(f"File size before: {size / 1024 ** 2:.2f} MB")
+
+    if input_format == "vtu":
+        if vtu.check_data_format(file, "binary"):
+            print(f"{file} is already binary")
+            return
+
     mesh = read(file, file_format=input_format)
 
     # # Some converters (like VTK) require `points` to be contiguous.
@@ -72,9 +78,7 @@ def binary(args):
         if args.input_format:
             input_format = [args.input_format] * len(args.infile)
         else:
-            input_formats = [
-                _filetypes_from_path(pathlib.Path(file))[0] for file in args.infile
-            ]
+            input_formats = [_filetypes_from_path(pathlib.Path(file))[0] for file in args.infile]
 
         flexible_args = list(zip(args.infile, input_formats))
 

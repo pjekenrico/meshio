@@ -329,7 +329,24 @@ class VtuReader:
         except KeyError:
             self.byte_order = None
 
-        grid, self.appended_data = get_grid(root)
+        self.root = root
+
+    def check_data_format(self):
+        """Check whether the data blocks are binary or ASCII."""
+        data_arrays = self.root.findall(".//DataArray")
+        formats = {}
+
+        for data_array in data_arrays:
+            name = data_array.attrib.get("Name", "Unnamed")
+            fmt = data_array.attrib.get("format", "ascii").lower()
+            if fmt not in ["ascii", "binary"]:
+                raise ReadError(f"Unexpected format '{fmt}' in DataArray '{name}'.")
+            formats[name] = fmt
+
+        return formats
+
+    def read(self):
+        grid, self.appended_data = get_grid(self.root)
 
         pieces = []
         field_data = {}
@@ -574,6 +591,7 @@ class VtuReader:
 
 def read(filename):
     reader = VtuReader(filename)
+    reader.read()
     return Mesh(
         reader.points,
         reader.cells,
@@ -582,6 +600,12 @@ def read(filename):
         user_data=reader.user_data,
         field_data=reader.field_data,
     )
+
+
+def check_data_format(filename, format: str):
+    reader = VtuReader(filename)
+    formats = reader.check_data_format()
+    return all(fmt == format for fmt in formats.values())
 
 
 def _chunk_it(array, n):
