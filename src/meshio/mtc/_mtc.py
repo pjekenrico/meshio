@@ -179,9 +179,9 @@ def write(filename, mesh, dimension=None, precision: int = 17):
         line = lin[uniq_idx][uniq_cnt == 1]
 
     # Detecting used nodes
-    used_elems = np.unique(np.concatenate((tetra.flatten(), triangle.flatten())))  # sorted
+    used_nodes = np.unique(np.concatenate((tetra.flatten(), triangle.flatten())))  # sorted
     bools_keep = np.zeros(len(points), dtype=bool)
-    bools_keep[used_elems] = True
+    bools_keep[used_nodes] = True
 
     # Deleting unused nodes and reindexing
     points = points[bools_keep]
