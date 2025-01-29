@@ -2,7 +2,7 @@ import os
 import pathlib
 import multiprocessing as mp
 from .. import ansys, flac3d, gmsh, mdpa, ply, stl, vtk, vtu, xdmf
-from .._helpers import _filetypes_from_path, read, reader_map
+from .._helpers import _filetypes_from_path, read, reader_map, estimate_optimal_processes
 
 
 def add_args(parser):
@@ -82,5 +82,8 @@ def binary(args):
 
         flexible_args = list(zip(args.infile, input_formats))
 
-        with mp.Pool(processes=16) as pool:
+        num_processes = estimate_optimal_processes(args.infile)
+        print(f"Using {num_processes} processes...")
+
+        with mp.Pool(processes=num_processes) as pool:
             pool.map(parallel_func, flexible_args)

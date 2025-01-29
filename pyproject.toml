@@ -41,6 +41,7 @@ dependencies = [
   "importlib_metadata; python_version<'3.8'",
   "numpy>=1.20.0",
   "rich",
+  "psutil",
 ]
 
 [project.optional-dependencies]
