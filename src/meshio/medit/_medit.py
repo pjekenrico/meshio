@@ -63,11 +63,29 @@ def read_binary_buffer(f):
         "GmfHexahedra": ("hexahedron", 8),
     }
 
+    point_data_from_medit = {
+        "GmfCorners": ("medit:corners", "index"),
+        "GmfRequiredVertices": ("medit:required_vertices", "index"),
+        "GmfNormals": ("medit:normals", "value"),
+        "GmfNormalAtVertices": ("medit:normal_at_vertices", "doubleindex"),
+        "GmfTangents": ("medit:tangents", "value"),
+        "GmfTangentAtVertices": ("medit:tangent_at_vertices", "doubleindex"),
+    }
+
+    cell_data_from_medit = {
+        "GmfRidges": ("medit:ridges", "line"),
+        "GmfRequiredEdges": ("medit:required_edges", "line"),
+        "GmfRequiredTriangles": ("medit:required_triangles", "triangle"),
+        "GmfRequiredQuadrilaterals": ("medit:required_quadrilaterals", "quad"),
+    }
+
     dim = 0
     points = None
     cells = []
     point_data = {}
     cell_data = {"medit:ref": []}
+    medit_point_data = {}
+    medit_cell_data = {}
     itype = ""
     ftype = ""
     postype = ""
@@ -150,13 +168,21 @@ def read_binary_buffer(f):
         field_template = field_code[2]
         dtype = np.dtype(_produce_dtype(field_template, dim, itype, ftype))
         out = np.asarray(np.fromfile(f, count=nitems, dtype=dtype))
-        if field_code[0] not in meshio_from_medit.keys():
+        if (
+            field_code[0] not in meshio_from_medit.keys()
+            and field_code[0] not in cell_data_from_medit.keys()
+            and field_code[0] not in point_data_from_medit.keys()
+        ):
             warn(f"meshio doesn't know {field_code[0]} type. Skipping.")
             continue
 
         elif field_code[0] == "GmfVertices":
             points = out["f0"]
             point_data["medit:ref"] = out["f1"]
+        elif field_code[0] in point_data_from_medit:
+            medit_point_data[field_code[0]] = out
+        elif field_code[0] in cell_data_from_medit:
+            medit_cell_data[field_code[0]] = out
         else:
             meshio_type, ncols = meshio_from_medit[field_code[0]]
             # transform the structured array to integer array which suffices
@@ -164,6 +190,27 @@ def read_binary_buffer(f):
             out_view = out.view(itype).reshape(nitems, ncols + 1)
             cells.append((meshio_type, out_view[:, :ncols] - 1))
             cell_data["medit:ref"].append(out_view[:, -1])
+
+    for medit_name in medit_point_data:
+        meshio_name, data_type = point_data_from_medit[medit_name]
+        if data_type == "index":
+            point_data[meshio_name] = np.zeros(len(points), dtype=int)
+            point_data[meshio_name][medit_point_data[medit_name] - 1] = 1
+        elif data_type == "value" and medit_name[:-1] + "AtVertices" in medit_point_data:
+            double_index = medit_point_data[medit_name[:-1] + "AtVertices"]
+            data = medit_point_data[medit_name]
+            point_data[meshio_name] = np.zeros((len(points), *data.shape[1:]), dtype=float)
+            point_data[meshio_name][double_index["f0"] - 1] = data
+
+    for medit_name in medit_cell_data:
+        meshio_name, meshio_type = cell_data_from_medit[medit_name]
+        if meshio_type not in [cell[0] for cell in cells]:
+            raise ReadError(meshio_name + " is only supported for " + meshio_type)
+        cell_data[meshio_name] = []
+        for cell in cells:
+            cell_data[meshio_name].append(np.zeros(len(cell[1]), dtype=int))
+            if cell[0] == meshio_type:
+                cell_data[meshio_name][-1][medit_cell_data[medit_name] - 1] = 1
 
     return Mesh(points, cells, point_data=point_data, cell_data=cell_data)
 
@@ -185,6 +232,7 @@ def read_ascii_buffer(f):
         "Hexaedra": ("hexahedron", 8),  # Dobrzynski
     }
     points = None
+    ridge_indices = None
     dtype = None
 
     while True:
@@ -218,9 +266,9 @@ def read_ascii_buffer(f):
             if dtype is None:
                 raise ReadError("Expected `MeshVersionFormatted` before `Vertices`")
             num_verts = int(f.readline())
-            out = np.fromfile(
-                f, count=num_verts * (dim + 1), dtype=dtype, sep=" "
-            ).reshape(num_verts, dim + 1)
+            out = np.fromfile(f, count=num_verts * (dim + 1), dtype=dtype, sep=" ").reshape(
+                num_verts, dim + 1
+            )
             points = out[:, :dim]
             point_data["medit:ref"] = out[:, dim].astype(int)
         elif items[0] in meshio_from_medit:
@@ -235,6 +283,9 @@ def read_ascii_buffer(f):
             # adapt for 0-base
             cells.append((meshio_type, out[:, :points_per_cell] - 1))
             cell_data["medit:ref"].append(out[:, -1])
+        elif items[0] == "Ridges":
+            num_ridges = int(f.readline())
+            ridge_indices = np.fromfile(f, count=num_ridges, dtype=int, sep=" ") - 1
         elif items[0] == "Corners":
             # those are just discarded
             num_corners = int(f.readline())
@@ -242,46 +293,43 @@ def read_ascii_buffer(f):
         elif items[0] == "Normals":
             # those are just discarded
             num_normals = int(f.readline())
-            np.fromfile(f, count=num_normals * dim, dtype=dtype, sep=" ").reshape(
-                num_normals, dim
-            )
+            np.fromfile(f, count=num_normals * dim, dtype=dtype, sep=" ").reshape(num_normals, dim)
         elif items[0] == "NormalAtVertices":
             # those are just discarded
             num_normal_at_vertices = int(f.readline())
-            np.fromfile(
-                f, count=num_normal_at_vertices * 2, dtype=int, sep=" "
-            ).reshape(num_normal_at_vertices, 2)
+            np.fromfile(f, count=num_normal_at_vertices * 2, dtype=int, sep=" ").reshape(
+                num_normal_at_vertices, 2
+            )
         elif items[0] == "SubDomainFromMesh":
             # those are just discarded
             num_sub_domain_from_mesh = int(f.readline())
-            np.fromfile(
-                f, count=num_sub_domain_from_mesh * 4, dtype=int, sep=" "
-            ).reshape(num_sub_domain_from_mesh, 4)
+            np.fromfile(f, count=num_sub_domain_from_mesh * 4, dtype=int, sep=" ").reshape(
+                num_sub_domain_from_mesh, 4
+            )
         elif items[0] == "VertexOnGeometricVertex":
             # those are just discarded
             num_vertex_on_geometric_vertex = int(f.readline())
-            np.fromfile(
-                f, count=num_vertex_on_geometric_vertex * 2, dtype=int, sep=" "
-            ).reshape(num_vertex_on_geometric_vertex, 2)
+            np.fromfile(f, count=num_vertex_on_geometric_vertex * 2, dtype=int, sep=" ").reshape(
+                num_vertex_on_geometric_vertex, 2
+            )
         elif items[0] == "VertexOnGeometricEdge":
             # those are just discarded
             num_vertex_on_geometric_edge = int(f.readline())
-            np.fromfile(
-                f, count=num_vertex_on_geometric_edge * 3, dtype=float, sep=" "
-            ).reshape(num_vertex_on_geometric_edge, 3)
+            np.fromfile(f, count=num_vertex_on_geometric_edge * 3, dtype=float, sep=" ").reshape(
+                num_vertex_on_geometric_edge, 3
+            )
         elif items[0] == "EdgeOnGeometricEdge":
             # those are just discarded
             num_edge_on_geometric_edge = int(f.readline())
-            np.fromfile(
-                f, count=num_edge_on_geometric_edge * 2, dtype=int, sep=" "
-            ).reshape(num_edge_on_geometric_edge, 2)
+            np.fromfile(f, count=num_edge_on_geometric_edge * 2, dtype=int, sep=" ").reshape(
+                num_edge_on_geometric_edge, 2
+            )
         elif items[0] == "Identifier" or items[0] == "Geometry":
             f.readline()
         elif items[0] in [
             "RequiredVertices",
             "TangentAtVertices",
             "Tangents",
-            "Ridges",
         ]:
             msg = f"Meshio doesn't know keyword {items[0]}. Skipping."
             warn(msg)
@@ -294,6 +342,16 @@ def read_ascii_buffer(f):
 
     if points is None:
         raise ReadError("Expected `Vertices`")
+
+    if ridge_indices is not None:
+        if "line" not in [cell[0] for cell in cells]:
+            raise ReadError("Ridges are only supported for line cells.")
+        cell_data["medit:ridges"] = []
+        for cell in cells:
+            cell_data["medit:ridges"].append(np.zeros(len(cell[1]), dtype=int))
+            if cell[0] == "line":
+                cell_data["medit:ridges"][-1][ridge_indices] = 1
+
     return Mesh(points, cells, point_data=point_data, cell_data=cell_data)
 
 
@@ -345,8 +403,16 @@ def write_ascii_file(filename, mesh, float_fmt=".16e"):
             "hexahedron": ("Hexahedra", 8),
         }
 
+        treated_fields = []
+
+        # pick out ridges
+        ridges = None
+        if "medit:ridges" in mesh.cell_data:
+            ridges = mesh.cell_data["medit:ridges"]
+            treated_fields.append("medit:ridges")
+
         # pick out cell_data
-        labels_key, other = _pick_first_int_data(mesh.cell_data)
+        labels_key, other = _pick_first_int_data(mesh.cell_data, treated_fields)
         if labels_key and other:
             string = ", ".join(other)
             warn(
@@ -362,26 +428,28 @@ def write_ascii_file(filename, mesh, float_fmt=".16e"):
                 warn(msg)
                 continue
             if cell_block.type in cells:
-                cells[cell_block.type] = np.concatenate(
-                    [cells[cell_block.type], cell_block.data]
-                )
+                cells[cell_block.type] = np.concatenate([cells[cell_block.type], cell_block.data])
                 # pick out cell data
                 labels[cell_block.type] = np.concatenate(
                     [
                         labels[cell_block.type],
-                        mesh.cell_data[labels_key][k]
-                        if labels_key
-                        else np.ones(len(cell_block.data), dtype=cell_block.data.dtype)
+                        (
+                            mesh.cell_data[labels_key][k]
+                            if labels_key
+                            else np.ones(len(cell_block.data), dtype=cell_block.data.dtype)
+                        ),
                     ]
                 )
             else:
                 cells[cell_block.type] = cell_block.data
                 # pick out cell data
                 labels[cell_block.type] = (
-                        mesh.cell_data[labels_key][k]
-                        if labels_key
-                        else np.ones(len(cell_block.data), dtype=cell_block.data.dtype)
+                    mesh.cell_data[labels_key][k]
+                    if labels_key
+                    else np.ones(len(cell_block.data), dtype=cell_block.data.dtype)
                 )
+            if cell_block.type == "line" and ridges is not None:
+                ridges = ridges[k]
 
         for cell_type, data in cells.items():
             medit_name, num = medit_from_meshio[cell_type]
@@ -395,6 +463,17 @@ def write_ascii_file(filename, mesh, float_fmt=".16e"):
             # adapt 1-base
             for d, label in zip(data + 1, lbls):
                 fh.write(fmt.format(*d, label).encode())
+
+        if ridges is not None:
+            if isinstance(ridges, np.ndarray) and len(ridges.shape) == 1:
+                ridges = np.nonzero(ridges)[0] + 1
+                fh.write(b"\nRidges\n")
+                fh.write(f"{len(ridges)}\n".encode())
+                fmt = "{:d}\n"
+                for r in ridges:
+                    fh.write(fmt.format(r).encode())
+            else:
+                warn("Ridges field doesn't have the right shape. Skipping.")
 
         fh.write(b"\nEnd\n")
 
@@ -458,6 +537,7 @@ def write_binary_file(f, mesh):
         field_template = field_code[2]
         dtype = np.dtype(_produce_dtype(field_template, dim, itype, ftype))
 
+        # pick out point data
         labels_key, other = _pick_first_int_data(mesh.point_data)
         if labels_key and other:
             other_string = ", ".join(other)
@@ -465,18 +545,23 @@ def write_binary_file(f, mesh):
                 "Medit can only write one point data array. "
                 f"Picking {labels_key}, skipping {other_string}."
             )
-        labels = (
-            mesh.point_data[labels_key]
-            if labels_key
-            else np.ones(num_verts, dtype=itype)
-        )
+        labels = mesh.point_data[labels_key] if labels_key else np.ones(num_verts, dtype=itype)
 
         tmp_array = np.empty(num_verts, dtype=dtype)
         tmp_array["f0"] = mesh.points
         tmp_array["f1"] = labels
         tmp_array.tofile(fh)
 
-        labels_key, other = _pick_first_int_data(mesh.cell_data)
+        treated_fields = []
+
+        # pick out ridges
+        ridges = None
+        if "medit:ridges" in mesh.cell_data:
+            ridges = mesh.cell_data["medit:ridges"]
+            treated_fields.append("medit:ridges")
+
+        # pick out cell data
+        labels_key, other = _pick_first_int_data(mesh.cell_data, treated_fields)
         if labels_key and other:
             string = ", ".join(other)
             warn(
@@ -498,10 +583,7 @@ def write_binary_file(f, mesh):
             try:
                 medit_key = medit_from_meshio[cell_block.type]
             except KeyError:
-                warn(
-                    f"MEDIT's mesh format doesn't know {cell_block.type} cells. "
-                    + "Skipping."
-                )
+                warn(f"MEDIT's mesh format doesn't know {cell_block.type} cells. " + "Skipping.")
                 continue
 
             num_cells, num_verts = cell_block.data.shape
@@ -533,6 +615,39 @@ def write_binary_file(f, mesh):
 
             tmp_array[dtype.names[-1]] = labels
             tmp_array.tofile(fh)
+
+            if cell_block.type == "line" and ridges is not None:
+                ridges = ridges[k]
+
+        medit_from_cell_data = {
+            "medit:ridges": 14,
+        }
+        if ridges is not None:
+            if isinstance(ridges, np.ndarray) and len(ridges.shape) == 1:
+                ridges = np.nonzero(ridges)[0]
+
+                medit_key = medit_from_cell_data["medit:ridges"]
+                num_ridges = ridges.shape[0]
+
+                pos += num_ridges * itype_size
+                pos += keyword_size + postype_size + itype_size
+
+                header_type = np.dtype(",".join([keytype, postype, itype]))
+                tmp_array = np.empty(1, dtype=header_type)
+                tmp_array["f0"] = medit_key
+                tmp_array["f1"] = pos
+                tmp_array["f2"] = num_ridges
+                tmp_array.tofile(fh)
+
+                field_template = medit_codes[medit_key][2]
+                dtype = np.dtype(_produce_dtype(field_template, dim, itype, ftype))
+
+                tmp_array = np.empty(num_cells, dtype=dtype)
+                if len(field_template) == 1:
+                    tmp_array[:] = ridges + 1
+                tmp_array.tofile(fh)
+            else:
+                warn("Ridges field doesn't have the right shape. Skipping.")
 
         pos = 0
         field = 54  # GmfEnd
