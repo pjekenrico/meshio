@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import sys
+import os
+import multiprocessing as mp
+import psutil
 from pathlib import Path
 
 import numpy as np
@@ -53,6 +56,26 @@ def _filetypes_from_path(path: Path) -> list[str]:
     if not out:
         raise ReadError(f"Could not deduce file format from path '{path}'.")
     return out
+
+
+def get_available_cores():
+    return min(mp.cpu_count(), len(os.sched_getaffinity(0))) if hasattr(os, "sched_getaffinity") else mp.cpu_count()
+
+
+def get_available_memory():
+    return psutil.virtual_memory().available
+
+
+def estimate_optimal_processes(files):
+    total_size = sum(os.stat(file).st_size for file in files)
+    available_memory = get_available_memory()
+    available_cores = get_available_cores()
+
+    if total_size == 0:
+        return available_cores
+
+    memory_based_limit = max(1, available_memory // (total_size / len(files)))
+    return min(available_cores, memory_based_limit)
 
 
 def read(filename, file_format: str | None = None, **kwargs) -> Mesh:
