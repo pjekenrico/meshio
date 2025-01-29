@@ -101,9 +101,14 @@ def write_xml(filename, root):
     tree.write(filename)
 
 
-def _pick_first_int_data(data):
+def _pick_first_int_data(data, except_data=None):
+    if except_data is None:
+        except_data = []
     # pick out material
     keys = list(data.keys())
+    for key in except_data:
+        if key in keys:
+            keys.remove(key)
     candidate_keys = []
     for key in keys:
         # works for point_data and cell_data
