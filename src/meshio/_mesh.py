@@ -93,7 +93,9 @@ class CellBlock:
         self.data = data
 
         if cell_type not in topological_dimension:
-            raise ValueError(f"Unknown cell type '{cell_type}'. Choose from {topological_dimension.keys()}")
+            raise ValueError(
+                f"Unknown cell type '{cell_type}'. Choose from {topological_dimension.keys()}"
+            )
 
         if cell_type.startswith("polyhedron"):
             self.dim = 3
@@ -180,7 +182,8 @@ class Mesh:
                     raise ValueError(
                         "Cell data must be a list of lists "
                         + f"corresponding to each cell type. "
-                        + f"Type '{type(data[k])}' is not list.")
+                        + f"Type '{type(data[k])}' is not list."
+                    )
 
             if len(data) != len(cells):
                 raise ValueError(

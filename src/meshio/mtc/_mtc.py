@@ -1,9 +1,11 @@
 import numpy as np
+from _io import TextIOWrapper
 from .._exceptions import CorruptionError, ReadError
 from .._mesh import CellBlock, Mesh
 from .._helpers import register_format
 
-def skip_empty_lines(f):
+
+def skip_empty_lines(f: TextIOWrapper):
     while True:
         pos = f.tell()
         line = f.readline().strip()
@@ -11,6 +13,7 @@ def skip_empty_lines(f):
             f.seek(pos)
             break
     return f
+
 
 class MTCReader:
     """Helper class for reading MTC files."""
@@ -91,10 +94,12 @@ def read(filename):
     )
 
 
-def write(filename, mesh, dimension=None, precision: int = 17):
+def write(filename: str, mesh: Mesh, dimension=None, precision: int = 17):
 
     if mesh.points.shape[1] == 2:
-        points = np.column_stack([mesh.points, np.zeros_like(mesh.points[:, 0])], dtype=float)
+        points = np.column_stack(
+            [mesh.points, np.zeros_like(mesh.points[:, 0])], dtype=float
+        )
     else:
         points = mesh.points
 
@@ -108,13 +113,13 @@ def write(filename, mesh, dimension=None, precision: int = 17):
 
     for cell_block in mesh.cells:
         cell_type = cell_block.type
-        data = cell_block.data
+        data = np.array(cell_block.data).flatten().astype(int)
         if cell_type == "triangle":
             tri = True
-            triangle = np.concatenate((triangle, data.flatten()), dtype=int)
+            triangle = np.concatenate((triangle, data), dtype=int)
         if cell_type == "tetra":
             tet = True
-            tetra = np.concatenate((tetra, data.flatten()), dtype=int)
+            tetra = np.concatenate((tetra, data), dtype=int)
 
     if dimension:
         if float(dimension) < 3:
@@ -160,7 +165,9 @@ def write(filename, mesh, dimension=None, precision: int = 17):
         tris4 = tetra[:, [1, 2, 3]]
 
         tris = np.concatenate((tris1, tris2, tris3, tris4), axis=0)
-        tris_sorted = np.sort(tris, axis=1)  # creates a copy, may be source of memory error
+        tris_sorted = np.sort(
+            tris, axis=1
+        )  # creates a copy, may be source of memory error
         tris_sorted, uniq_idx, uniq_cnt = np.unique(
             tris_sorted, axis=0, return_index=True, return_counts=True
         )
@@ -172,14 +179,18 @@ def write(filename, mesh, dimension=None, precision: int = 17):
         lin3 = triangle[:, [1, 2]]
 
         lin = np.concatenate((lin1, lin2, lin3), axis=0)
-        lin_sorted = np.sort(lin, axis=1)  # creates a copy, may be source of memory error
+        lin_sorted = np.sort(
+            lin, axis=1
+        )  # creates a copy, may be source of memory error
         lin_sorted, uniq_idx, uniq_cnt = np.unique(
             lin_sorted, axis=0, return_index=True, return_counts=True
         )
         line = lin[uniq_idx][uniq_cnt == 1]
 
     # Detecting used nodes
-    used_nodes = np.unique(np.concatenate((tetra.flatten(), triangle.flatten())))  # sorted
+    used_nodes = np.unique(
+        np.concatenate((tetra.flatten(), triangle.flatten()))
+    )  # sorted
     bools_keep = np.zeros(len(points), dtype=bool)
     bools_keep[used_nodes] = True
 
@@ -216,7 +227,16 @@ def write(filename, mesh, dimension=None, precision: int = 17):
     line += 1
 
     with open(filename, "w") as fo:
-        lig = str(len(points)) + " " + str(dim) + " " + str(nb_elems) + " " + str(dim + 1) + "\n"
+        lig = (
+            str(len(points))
+            + " "
+            + str(dim)
+            + " "
+            + str(nb_elems)
+            + " "
+            + str(dim + 1)
+            + "\n"
+        )
         if dim == 2.5:
             lig = str(len(points)) + " 3 " + str(nb_elems) + " 4\n"
         fo.write(lig)
@@ -228,7 +248,9 @@ def write(filename, mesh, dimension=None, precision: int = 17):
             fo.write(" \n")
 
         for e in tetra:
-            fo.write(str(e[0]) + " " + str(e[1]) + " " + str(e[2]) + " " + str(e[3]) + " \n")
+            fo.write(
+                str(e[0]) + " " + str(e[1]) + " " + str(e[2]) + " " + str(e[3]) + " \n"
+            )
 
         for e in triangle:
             if dim == 3 or dim == 2.5:
