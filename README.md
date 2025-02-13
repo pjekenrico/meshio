@@ -220,6 +220,15 @@ You can also install meshio from [Anaconda](https://anaconda.org/conda-forge/mes
 conda install -c conda-forge meshio
 ```
 
+To agilitate the use through the command line you can source `meshio/tools/bash_meshio_rc.sh`. This will load in the commands `ascii`, `binary`, `compress`, `convert`, `decompress` and `info`. Sourcing can be done manually through
+
+```
+source meshio/tools/bash_meshio_rc.sh
+```
+
+or by adding the source call directly to your `.bashrc` in Linux.
+
+
 ### Testing
 
 To run the meshio unit tests, check out this repository and type

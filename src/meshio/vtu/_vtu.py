@@ -862,7 +862,7 @@ def write(filename, mesh, binary=True, compression="zlib", header_type=None):
                     con += unique_nodes
                     num_nodes_per_cell.append(len(unique_nodes))
 
-            connectivity = np.array(con)
+            connectivity = np.array(con, dtype=np.int32)
             # offsets = np.hstack(([0], np.cumsum(num_nodes_per_cell)[:-1]))
             offsets = np.cumsum(num_nodes_per_cell)
 
@@ -879,7 +879,7 @@ def write(filename, mesh, binary=True, compression="zlib", header_type=None):
                 if new_order is not None:
                     d = d[:, new_order]
                 connectivity.append(d.flatten())
-            connectivity = np.concatenate(connectivity)
+            connectivity = np.concatenate(connectivity, dtype=np.int32)
 
             # offset (points to the first element of the next cell)
             offsets = [

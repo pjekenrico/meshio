@@ -1,11 +1,12 @@
 import os
 import pathlib
 import multiprocessing as mp
+from argparse import ArgumentParser
 from .. import ansys, flac3d, gmsh, mdpa, ply, stl, vtk, vtu, xdmf
 from .._helpers import _filetypes_from_path, read, reader_map, estimate_optimal_processes
 
 
-def add_args(parser):
+def add_args(parser: ArgumentParser):
 
     parser.add_argument(
         "--input-format",
@@ -63,7 +64,7 @@ def parallel_func(inputs) -> None:
     print(f"File size after: {size / 1024 ** 2:.2f} MB")
 
 
-def binary(args):
+def binary(args: ArgumentParser):
     if not isinstance(args.infile, list):
 
         if args.input_format:

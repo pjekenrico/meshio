@@ -19,7 +19,9 @@ reader_map = {}
 _writer_map = {}
 
 
-def register_format(format_name: str, extensions: list[str], reader, writer_map) -> None:
+def register_format(
+    format_name: str, extensions: list[str], reader, writer_map
+) -> None:
     for ext in extensions:
         if ext not in extension_to_filetypes:
             extension_to_filetypes[ext] = []
@@ -59,7 +61,11 @@ def _filetypes_from_path(path: Path) -> list[str]:
 
 
 def get_available_cores():
-    return min(mp.cpu_count(), len(os.sched_getaffinity(0))) if hasattr(os, "sched_getaffinity") else mp.cpu_count()
+    return (
+        min(mp.cpu_count(), len(os.sched_getaffinity(0)))
+        if hasattr(os, "sched_getaffinity")
+        else mp.cpu_count()
+    )
 
 
 def get_available_memory():
@@ -97,7 +103,8 @@ def _read_buffer(filename, file_format: str | None, **kwargs):
         raise ReadError("File format must be given if buffer is used")
     if file_format == "tetgen":
         raise ReadError(
-            "tetgen format is spread across multiple files " "and so cannot be read from a buffer"
+            "tetgen format is spread across multiple files "
+            "and so cannot be read from a buffer"
         )
     if file_format not in reader_map:
         raise ReadError(f"Unknown file format '{file_format}'")
