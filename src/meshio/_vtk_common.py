@@ -171,7 +171,7 @@ def vtk_cells_from_data(connectivity, offsets, types, cell_data_raw):
                 new_order = np.arange(n, dtype=offsets.dtype)
             new_order -= n
 
-            indices = np.add.outer(offsets[start:end], new_order)
+            indices = np.add.outer(offsets[start:end], new_order).astype(int)
             cells.append(CellBlock(meshio_type, connectivity[indices]))
             for name, d in cell_data_raw.items():
                 if name not in cell_data:
