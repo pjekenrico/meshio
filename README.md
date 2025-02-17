@@ -226,7 +226,7 @@ To agilitate the use through the command line you can source `meshio/tools/bash_
 source meshio/tools/bash_meshio_rc.sh
 ```
 
-or by adding the source call directly to your `.bashrc` in Linux.
+or by adding the source call directly to the `bin/activate` file in meshio's virtual environment.
 
 
 ### Testing
