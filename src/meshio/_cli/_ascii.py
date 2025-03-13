@@ -15,6 +15,20 @@ def add_args(parser):
         help="input file format",
         default=None,
     )
+    parser.add_argument(
+        "--precision",
+        "-p",
+        type=int,
+        help="number of decimal places",
+        default=None,
+    )
+    parser.add_argument(
+        "--force",
+        "-f",
+        action="store_true",
+        help="force overwrite",
+        default=False,
+    )
 
     parser.add_argument("infile", type=str, nargs="*", help="mesh file to convert")
 
@@ -34,10 +48,11 @@ def ascii(args):
         size = os.stat(file).st_size
         print(f"File size before: {size / 1024 ** 2:.2f} MB")
 
-        if fmt == "vtu":
-            if vtu.check_data_format(file, "ascii"):
-                print(f"{file} is already ascii")
-                return
+        if not args.force:
+            if fmt == "vtu":
+                if vtu.check_data_format(file, "ascii"):
+                    print(f"{file} is already ascii")
+                    return
 
         mesh = read(file, file_format=args.input_format)
 
@@ -46,27 +61,29 @@ def ascii(args):
 
         # write it out
         if fmt == "ansys":
-            ansys.write(file, mesh, binary=False)
+            ansys.write("a" + file, mesh, binary=False)
         elif fmt == "flac3d":
-            flac3d.write(file, mesh, binary=False)
+            flac3d.write("a" + file, mesh, binary=False)
         elif fmt == "gmsh":
-            gmsh.write(file, mesh, binary=False)
+            gmsh.write("a" + file, mesh, binary=False)
         elif fmt == "mdpa":
-            mdpa.write(file, mesh, binary=False)
+            mdpa.write("a" + file, mesh, binary=False)
         elif fmt == "ply":
-            ply.write(file, mesh, binary=False)
+            ply.write("a" + file, mesh, binary=False)
         elif fmt == "stl":
-            stl.write(file, mesh, binary=False)
+            stl.write("a" + file, mesh, binary=False)
         elif fmt == "vtk":
-            vtk.write(file, mesh, binary=False)
+            vtk.write("a" + file, mesh, binary=False)
         elif fmt == "vtu":
-            vtu.write(file, mesh, binary=False)
+            vtu.write("a" + file, mesh, binary=False, precision=args.precision)
         elif fmt == "xdmf":
-            xdmf.write(file, mesh, data_format="XML")
+            xdmf.write("a" + file, mesh, data_format="XML")
         else:
             error(f"Don't know how to convert {file} to ASCII format.")
             return 1
 
+        os.remove(file)
+        os.rename("a" + file, file)
         size = os.stat(file).st_size
         print(f"File size after: {size / 1024 ** 2:.2f} MB")
         return 0
