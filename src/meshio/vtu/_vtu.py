@@ -615,7 +615,7 @@ def _chunk_it(array, n):
         k += 1
 
 
-def write(filename, mesh, binary=True, compression="zlib", header_type=None):
+def write(filename, mesh, binary=True, compression="zlib", header_type=None, precision=None):
     # Writing XML with an etree required first transforming the (potentially large)
     # arrays into string, which are much larger in memory still. This makes this writer
     # very memory hungry. See <https://stackoverflow.com/q/59272477/353337>.
@@ -723,8 +723,6 @@ def write(filename, mesh, binary=True, compression="zlib", header_type=None):
 
     def numpy_to_xml_array(parent, name, data):
         vtu_type = numpy_to_vtu_type[data.dtype]
-        fmt = "{:.11e}" if vtu_type.startswith("Float") else "{:d}"
-        npfmt = "%-1.11g" if vtu_type.startswith("Float") else "%-d"
         da = ET.SubElement(parent, "DataArray", type=vtu_type, Name=name)
         if len(data.shape) == 2:
             da.set("NumberOfComponents", f"{data.shape[1]}")
@@ -765,16 +763,18 @@ def write(filename, mesh, binary=True, compression="zlib", header_type=None):
         def text_writer_ascii(f):
             # This write() loop is the bottleneck for the write. Alternatives:
             # savetxt is super slow:
-            #   np.savetxt(f, data.reshape(-1), fmt=fmt)
+            #   npfmt = "%-1.11g" if vtu_type.startswith("Float") else "%-d"
+            #   np.savetxt(f, data.reshape(-1), fmt=npfmt)
             # joining and writing is a bit faster, but consumes huge amounts of
             # memory:
             #   f.write("\n".join(map(fmt.format, data.reshape(-1))))
 
+            prec = 11 if precision is None else precision
+            fmt = "{:."+str(prec)+"g}" if vtu_type.startswith("Float") else "{:d}"
+
             # normal meshio behaviour:
             for item in data.reshape(-1):
                 f.write((fmt + "\n").format(item))
-
-            # np.savetxt(f, data, fmt=npfmt, footer='', header='')
 
             # Remove last newline for cimlib compatibility
             import os
