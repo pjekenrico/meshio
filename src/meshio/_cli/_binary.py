@@ -16,6 +16,13 @@ def add_args(parser: ArgumentParser):
         help="input file format",
         default=None,
     )
+    parser.add_argument(
+        "--num-processes",
+        "-np",
+        type=int,
+        help="number of processes",
+        default=None,
+    )
 
     parser.add_argument("infile", type=str, nargs="*", help="mesh file to convert")
 
@@ -39,27 +46,29 @@ def parallel_func(inputs) -> None:
 
     # write it out
     if input_format == "gmsh":
-        gmsh.write(file, mesh, binary=True)
+        gmsh.write("b" + file, mesh, binary=True)
     elif input_format == "ansys":
-        ansys.write(file, mesh, binary=True)
+        ansys.write("b" + file, mesh, binary=True)
     elif input_format == "flac3d":
-        flac3d.write(file, mesh, binary=True)
+        flac3d.write("b" + file, mesh, binary=True)
     elif input_format == "mdpa":
-        mdpa.write(file, mesh, binary=True)
+        mdpa.write("b" + file, mesh, binary=True)
     elif input_format == "ply":
-        ply.write(file, mesh, binary=True)
+        ply.write("b" + file, mesh, binary=True)
     elif input_format == "stl":
-        stl.write(file, mesh, binary=True)
+        stl.write("b" + file, mesh, binary=True)
     elif input_format == "vtk":
-        vtk.write(file, mesh, binary=True)
+        vtk.write("b" + file, mesh, binary=True)
     elif input_format == "vtu":
-        vtu.write(file, mesh, binary=True)
+        vtu.write("b" + file, mesh, binary=True)
     elif input_format == "xdmf":
-        xdmf.write(file, mesh, data_format="HDF")
+        xdmf.write("b" + file, mesh, data_format="HDF")
     else:
         print(f"Don't know how to convert {file} to binary format.")
         exit(1)
 
+    os.remove(file)
+    os.rename("b" + file, file)
     size = os.stat(file).st_size
     print(f"File size after: {size / 1024 ** 2:.2f} MB")
 
@@ -83,8 +92,13 @@ def binary(args: ArgumentParser):
 
         flexible_args = list(zip(args.infile, input_formats))
 
-        num_processes = estimate_optimal_processes(args.infile)
-        print(f"Using {num_processes} processes...")
+        if args.num_processes:
+            num_processes = args.num_processes
+            print(f"Using {num_processes} processes...")
+        else:
+            num_processes = estimate_optimal_processes(args.infile)
+            num_processes //= 2
+            print(f"Using {num_processes} processes...")
 
         with mp.Pool(processes=num_processes) as pool:
             pool.map(parallel_func, flexible_args)
