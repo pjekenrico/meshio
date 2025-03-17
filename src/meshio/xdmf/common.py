@@ -22,8 +22,8 @@ dtype_to_format_string = {
     "int64": "%d",
     "uint32": "%d",
     "uint64": "%d",
-    "float32": "%.7e",
-    "float64": "%.16e",
+    "float32": "%.7g",
+    "float64": "%.16g",
 }
 
 
