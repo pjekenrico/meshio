@@ -370,7 +370,12 @@ class TimeSeriesWriter:
             raise WriteError()
         name = f"data{self.data_counter}"
         self.data_counter += 1
-        self.h5_file.create_dataset(name, data=data)
+        if data.dtype == np.float32 or data.dtype == np.float64:
+            self.h5_file.create_dataset(name, data=data, chunks=True, compression="gzip", shuffle=True, scaleoffset=6)
+        elif data.dtype == np.int32 or data.dtype == np.int64 or data.dtype == np.uint32 or data.dtype == np.uint64:
+            self.h5_file.create_dataset(name, data=data, chunks=True, compression="gzip", shuffle=True, scaleoffset=0)
+        else:
+            self.h5_file.create_dataset(name, data=data, chunks=True, compression="gzip", shuffle=True)
         return os.path.basename(self.h5_filename) + ":/" + name
 
     def points(self, grid, points):
