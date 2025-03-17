@@ -204,9 +204,7 @@ class TimeSeriesReader:
                 sep=" ",
             ).reshape(dims)
         elif data_format == "Binary":
-            return np.fromfile(
-                data_item.text.strip(), dtype=xdmf_to_numpy_type[(data_type, precision)]
-            ).reshape(dims)
+            return np.fromfile(data_item.text.strip(), dtype=xdmf_to_numpy_type[(data_type, precision)]).reshape(dims)
 
         if data_format != "HDF":
             raise ReadError(f"Unknown XDMF Format '{data_format}'.")
@@ -238,9 +236,7 @@ class TimeSeriesReader:
 class TimeSeriesWriter:
     def __init__(self, filename, data_format: str = "HDF", add: bool = False) -> None:
         if data_format not in ["XML", "Binary", "HDF"]:
-            raise WriteError(
-                "Unknown XDMF data format " f"'{data_format}' (use 'XML', 'Binary', or 'HDF'.)"
-            )
+            raise WriteError("Unknown XDMF data format " f"'{data_format}' (use 'XML', 'Binary', or 'HDF'.)")
 
         self.filename = pathlib.Path(filename)
         self.data_format = data_format
@@ -267,9 +263,7 @@ class TimeSeriesWriter:
                     else:
                         # skip the xi:included mesh
                         continue
-                    if data_name.startswith(
-                        os.path.basename(self.filename.with_suffix(".h5")) + ":/data"
-                    ):
+                    if data_name.startswith(os.path.basename(self.filename.with_suffix(".h5")) + ":/data"):
                         counter = data_name.split("/data")[-1]
                         if counter.isdigit():
                             counter = int(counter)
@@ -352,13 +346,18 @@ class TimeSeriesWriter:
         if user_data:
             self.user_data(user_data, grid)
 
-    def numpy_to_xml_string(self, data):
-        if self.data_format == "XML":
+    def numpy_to_xml_string(self, data, force_format=None):
+        if force_format is not None:
+            dtfmt = force_format
+        else:
+            dtfmt = self.data_format
+
+        if dtfmt == "XML":
             s = BytesIO()
             fmt = dtype_to_format_string[data.dtype.name]
             np.savetxt(s, data.flatten(), fmt)
             return s.getvalue().decode()
-        elif self.data_format == "Binary":
+        elif dtfmt == "Binary":
             bin_filename = f"{self.filename.with_suffix('')}{self.data_counter}.bin"
             self.data_counter += 1
             # write binary data to file
@@ -366,7 +365,7 @@ class TimeSeriesWriter:
                 data.tofile(f)
             return bin_filename
 
-        if self.data_format != "HDF":
+        if dtfmt != "HDF":
             raise WriteError()
         name = f"data{self.data_counter}"
         self.data_counter += 1
@@ -524,10 +523,10 @@ class TimeSeriesWriter:
                 Name=name,
                 DataType=dt,
                 Dimensions=dim,
-                Format=self.data_format,
+                Format="XML",
                 Precision=prec,
             )
-            data_item.text = self.numpy_to_xml_string(data)
+            data_item.text = self.numpy_to_xml_string(data, force_format="XML")
 
 
 class TimeSeriesModifier:
