@@ -348,9 +348,7 @@ class Mesh:
                     try:
                         arr[cc] = i
                     except:
-                        warn(
-                            f"Cell sets are ill-defined : {cc} out of range {len(arr)}"
-                        )
+                        warn(f"Cell sets are ill-defined : {cc} out of range {len(arr)}")
                         continue
                 intfun.append(arr)
 
@@ -445,3 +443,34 @@ class Mesh:
 
         # remove the cell data
         del self.point_data[key]
+
+
+# This class is used to store mesh data without any cell data.
+# Useful for conversion to xdmf with one mesh and multiple time steps.
+class MeshOnlyFields:
+    def __init__(
+        self,
+        point_data: dict[str, ArrayLike] | None = None,
+        cell_data: dict[str, list[ArrayLike]] | None = None,
+        user_data: dict[str, list[ArrayLike]] | None = None,
+        field_data=None,
+        point_sets: dict[str, ArrayLike] | None = None,
+        cell_sets: dict[str, list[ArrayLike]] | None = None,
+        gmsh_periodic=None,
+        info=None,
+    ):
+        self.points = np.array([])
+        self.cells = []
+
+        self.point_data = {} if point_data is None else point_data
+        self.cell_data = {} if cell_data is None else cell_data
+        self.user_data = {} if user_data is None else user_data
+        self.field_data = {} if field_data is None else field_data
+        self.point_sets = {} if point_sets is None else point_sets
+        self.cell_sets = {} if cell_sets is None else cell_sets
+        self.gmsh_periodic = gmsh_periodic
+        self.info = info
+
+        for key, data in self.cell_data.items():
+            for k in range(len(data)):
+                data[k] = np.asarray(data[k])
