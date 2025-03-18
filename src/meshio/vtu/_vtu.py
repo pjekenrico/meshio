@@ -15,7 +15,7 @@ from ..__about__ import __version__
 from .._common import info, join_strings, raw_from_cell_data, replace_space, warn
 from .._exceptions import CorruptionError, ReadError
 from .._helpers import register_format
-from .._mesh import CellBlock, Mesh
+from .._mesh import CellBlock, Mesh, MeshOnlyFields
 from .._vtk_common import meshio_to_vtk_order, meshio_to_vtk_type, vtk_cells_from_data
 
 # Paraview 5.8.1's built-in Python doesn't have lzma.
@@ -345,7 +345,7 @@ class VtuReader:
 
         return formats
 
-    def read(self):
+    def read(self, onlyfields: bool = False):
         grid, self.appended_data = get_grid(self.root)
 
         pieces = []
@@ -380,6 +380,8 @@ class VtuReader:
 
             for child in piece:
                 if child.tag == "Points":
+                    if onlyfields:
+                        continue
                     data_arrays = list(child)
                     if len(data_arrays) != 1:
                         raise ReadError()
@@ -394,6 +396,8 @@ class VtuReader:
                     points.append(pts.reshape(num_points, num_components))
 
                 elif child.tag == "Cells":
+                    if onlyfields:
+                        continue
                     for data_array in child:
                         if data_array.tag != "DataArray":
                             raise ReadError()
@@ -436,18 +440,21 @@ class VtuReader:
                 else:
                     print(f"Warning: Ignoring unknown tag '{child.tag}' in vtu.")
 
-        if not cell_data_raw:
-            cell_data_raw = [{}] * len(cells)
+        if not onlyfields:
+            if not cell_data_raw:
+                cell_data_raw = [{}] * len(cells)
 
-        if len(cell_data_raw) != len(cells):
-            raise ReadError()
+            if len(cell_data_raw) != len(cells):
+                raise ReadError()
 
-        point_offsets = np.cumsum([0] + [pts.shape[0] for pts in points][:-1])
+            point_offsets = np.cumsum([0] + [pts.shape[0] for pts in points][:-1])
 
-        # Now merge across pieces
-        if not points:
-            raise ReadError()
-        self.points = np.concatenate(points)
+            # Now merge across pieces
+            if not points:
+                raise ReadError()
+            self.points = np.concatenate(points)
+        else:
+            self.points = None
 
         if point_data:
             self.point_data = {
@@ -456,7 +463,17 @@ class VtuReader:
         else:
             self.point_data = None
 
-        self.cells, self.cell_data = _organize_cells(point_offsets, cells, cell_data_raw)
+        if onlyfields:
+            # Since we don't read mesh data, we assume one cell type
+            self.cell_data = {}
+            for cdr in cell_data_raw:
+                for name, d in cdr.items():
+                    if name not in self.cell_data:
+                        self.cell_data[name] = []
+                    self.cell_data[name].append(d)
+            self.cells = None
+        else:
+            self.cells, self.cell_data = _organize_cells(point_offsets, cells, cell_data_raw)
         self.field_data = field_data
 
         if user_data:
@@ -589,9 +606,16 @@ class VtuReader:
         return data
 
 
-def read(filename):
+def read(filename, onlyfields=False):
     reader = VtuReader(filename)
-    reader.read()
+    reader.read(onlyfields)
+    if onlyfields:
+        return MeshOnlyFields(
+            point_data=reader.point_data,
+            cell_data=reader.cell_data,
+            user_data=reader.user_data,
+            field_data=reader.field_data,
+        )
     return Mesh(
         reader.points,
         reader.cells,
@@ -770,7 +794,7 @@ def write(filename, mesh, binary=True, compression="zlib", header_type=None, pre
             #   f.write("\n".join(map(fmt.format, data.reshape(-1))))
 
             prec = 11 if precision is None else precision
-            fmt = "{:."+str(prec)+"g}" if vtu_type.startswith("Float") else "{:d}"
+            fmt = "{:." + str(prec) + "g}" if vtu_type.startswith("Float") else "{:d}"
 
             # normal meshio behaviour:
             for item in data.reshape(-1):
