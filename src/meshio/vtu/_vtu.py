@@ -206,7 +206,9 @@ def _parse_raw_binary(filename):
 
     dtype = vtu_to_numpy_type[root.get("header_type", "UInt32")]
     if "byte_order" in root.attrib:
-        dtype = dtype.newbyteorder("<" if root.get("byte_order") == "LittleEndian" else ">")
+        dtype = dtype.newbyteorder(
+            "<" if root.get("byte_order") == "LittleEndian" else ">"
+        )
 
     appended_data_tag = root.find("AppendedData")
     assert appended_data_tag is not None
@@ -227,7 +229,9 @@ def _parse_raw_binary(filename):
             da_tag.set("offset", str(len(arrays)))
 
             block_size = int(np.frombuffer(data[i : i + dtype.itemsize], dtype)[0])
-            arrays += base64.b64encode(data[i : i + block_size + dtype.itemsize]).decode()
+            arrays += base64.b64encode(
+                data[i : i + block_size + dtype.itemsize]
+            ).decode()
             i += block_size + dtype.itemsize
 
     else:
@@ -252,7 +256,9 @@ def _parse_raw_binary(filename):
             for k in range(num_blocks):
                 block_size = int(header[k + 3])
                 block_data += c.decompress(
-                    data[i + j + num_header_bytes : i + j + block_size + num_header_bytes]
+                    data[
+                        i + j + num_header_bytes : i + j + block_size + num_header_bytes
+                    ]
                 )
                 j += block_size
 
@@ -320,7 +326,9 @@ class VtuReader:
         else:
             self.compression = None
 
-        self.header_type = root.attrib["header_type"] if "header_type" in root.attrib else "UInt32"
+        self.header_type = (
+            root.attrib["header_type"] if "header_type" in root.attrib else "UInt32"
+        )
 
         try:
             self.byte_order = root.attrib["byte_order"]
@@ -401,7 +409,9 @@ class VtuReader:
                     for data_array in child:
                         if data_array.tag != "DataArray":
                             raise ReadError()
-                        piece_cells[data_array.attrib["Name"]] = self.read_data(data_array)
+                        piece_cells[data_array.attrib["Name"]] = self.read_data(
+                            data_array
+                        )
 
                     if len(piece_cells["offsets"]) != num_cells:
                         raise ReadError()
@@ -458,7 +468,8 @@ class VtuReader:
 
         if point_data:
             self.point_data = {
-                key: np.concatenate([pd[key] for pd in point_data]) for key in point_data[0]
+                key: np.concatenate([pd[key] for pd in point_data])
+                for key in point_data[0]
             }
         else:
             self.point_data = None
@@ -473,12 +484,15 @@ class VtuReader:
                     self.cell_data[name].append(d)
             self.cells = None
         else:
-            self.cells, self.cell_data = _organize_cells(point_offsets, cells, cell_data_raw)
+            self.cells, self.cell_data = _organize_cells(
+                point_offsets, cells, cell_data_raw
+            )
         self.field_data = field_data
 
         if user_data:
             self.user_data = {
-                key: np.concatenate([ud[key] for ud in user_data]) for key in user_data[0]
+                key: np.concatenate([ud[key] for ud in user_data])
+                for key in user_data[0]
             }
         else:
             self.user_data = None
@@ -505,7 +519,9 @@ class VtuReader:
 
         # Read the block data; multiple blocks possible here?
         if self.byte_order is not None:
-            dtype = dtype.newbyteorder("<" if self.byte_order == "LittleEndian" else ">")
+            dtype = dtype.newbyteorder(
+                "<" if self.byte_order == "LittleEndian" else ">"
+            )
         return np.frombuffer(byte_string[:total_num_bytes], dtype=dtype)
 
     def read_compressed_binary(self, data, dtype):
@@ -535,14 +551,18 @@ class VtuReader:
         # Read the block data
         byte_array = base64.b64decode(data[num_header_chars:])
         if self.byte_order is not None:
-            dtype = dtype.newbyteorder("<" if self.byte_order == "LittleEndian" else ">")
+            dtype = dtype.newbyteorder(
+                "<" if self.byte_order == "LittleEndian" else ">"
+            )
 
         byte_offsets = np.empty(block_sizes.shape[0] + 1, dtype=block_sizes.dtype)
         byte_offsets[0] = 0
         np.cumsum(block_sizes, out=byte_offsets[1:])
 
         assert self.compression is not None
-        c = {"vtkLZMADataCompressor": lzma, "vtkZLibDataCompressor": zlib}[self.compression]
+        c = {"vtkLZMADataCompressor": lzma, "vtkZLibDataCompressor": zlib}[
+            self.compression
+        ]
 
         # process the compressed data
         block_data = np.concatenate(
@@ -639,7 +659,9 @@ def _chunk_it(array, n):
         k += 1
 
 
-def write(filename, mesh, binary=True, compression="zlib", header_type=None, precision=None):
+def write(
+    filename, mesh, binary=True, compression="zlib", header_type=None, precision=None
+):
     # Writing XML with an etree required first transforming the (potentially large)
     # arrays into string, which are much larger in memory still. This makes this writer
     # very memory hungry. See <https://stackoverflow.com/q/59272477/353337>.
@@ -658,13 +680,18 @@ def write(filename, mesh, binary=True, compression="zlib", header_type=None, pre
     if is_polyhedron_grid:
         for c in mesh.cells:
             if c.type[:10] != "polyhedron":
-                raise ValueError("VTU export cannot mix polyhedral cells with other cell types")
+                raise ValueError(
+                    "VTU export cannot mix polyhedral cells with other cell types"
+                )
 
     if not binary:
         warn("VTU ASCII files are only meant for debugging.")
 
     if mesh.points.shape[1] == 2:
-        warn("VTU requires 3D points, but 2D points given. " "Appending 0 third component.")
+        warn(
+            "VTU requires 3D points, but 2D points given. "
+            "Appending 0 third component."
+        )
         points = np.column_stack([mesh.points, np.zeros_like(mesh.points[:, 0])])
     else:
         points = mesh.points
@@ -772,7 +799,8 @@ def write(filename, mesh, binary=True, compression="zlib", header_type=None, pre
 
             # collect header
             header = np.array(
-                [num_blocks, max_block_size, last_block_size] + [len(b) for b in compressed_blocks],
+                [num_blocks, max_block_size, last_block_size]
+                + [len(b) for b in compressed_blocks],
                 dtype=vtu_to_numpy_type[header_type],
             )
             f.write(base64.b64encode(header.tobytes()).decode())
@@ -796,9 +824,14 @@ def write(filename, mesh, binary=True, compression="zlib", header_type=None, pre
             prec = 11 if precision is None else precision
             fmt = "{:." + str(prec) + "g}" if vtu_type.startswith("Float") else "{:d}"
 
-            # normal meshio behaviour:
-            for item in data.reshape(-1):
-                f.write((fmt + "\n").format(item))
+            # print all components of point data on same line
+            if len(data.shape) == 2:
+                for item in data:
+                    f.write(" ".join(fmt.format(x) for x in item) + " \n")
+            # normal meshio behavior
+            else:
+                for item in data.reshape(-1):
+                    f.write((fmt + "\n").format(item))
 
             # Remove last newline for cimlib compatibility
             import os
@@ -811,7 +844,9 @@ def write(filename, mesh, binary=True, compression="zlib", header_type=None, pre
 
         if binary:
             da.set("format", "binary")
-            da.text_writer = text_writer_compressed if compression else text_writer_uncompressed
+            da.text_writer = (
+                text_writer_compressed if compression else text_writer_uncompressed
+            )
         else:
             da.set("format", "ascii")
             da.text_writer = text_writer_ascii
@@ -902,12 +937,15 @@ def write(filename, mesh, binary=True, compression="zlib", header_type=None, pre
                 new_order = meshio_to_vtk_order(v.type)
                 if new_order is not None:
                     d = d[:, new_order]
-                connectivity.append(d.flatten())
+                # normal meshio behavior: connectivity.append(d.flatten())
+                # for cimlib: keep connectivities as (n,3) or (n,4)
+                connectivity.append(d)
             connectivity = np.concatenate(connectivity, dtype=np.int32)
 
             # offset (points to the first element of the next cell)
             offsets = [
-                v.data.shape[1] * np.arange(1, v.data.shape[0] + 1, dtype=connectivity.dtype)
+                v.data.shape[1]
+                * np.arange(1, v.data.shape[0] + 1, dtype=connectivity.dtype)
                 for v in mesh.cells
             ]
             for k in range(1, len(offsets)):
@@ -939,7 +977,6 @@ def write(filename, mesh, binary=True, compression="zlib", header_type=None, pre
             types_array
             # [np.full(len(v), meshio_to_vtk_type[k]) for k, v in mesh.cells]
         )
-
         numpy_to_xml_array(cls, "connectivity", connectivity)
         numpy_to_xml_array(cls, "offsets", offsets)
         numpy_to_xml_array(cls, "types", types)

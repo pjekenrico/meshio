@@ -23,6 +23,15 @@ class Element:
 
     def write(self, f):
         kw_list = [f'{key}="{value}"' for key, value in self.attrib.items()]
+        # cimlib does not read Points if Name kw is present
+        if 'Name="Points"' in kw_list:
+            kw_list.remove('Name="Points"')
+        # Paraview reads connectivities as 1 component
+        if 'Name="connectivity"' in kw_list:
+            for n in ('NumberOfComponents="3"', 'NumberOfComponents="4"'):
+                if n in kw_list:
+                    kw_list.remove(n)
+                    break
         f.write("<{}>\n".format(" ".join([self.name] + kw_list)))
         if self.text:
             f.write(self.text)
