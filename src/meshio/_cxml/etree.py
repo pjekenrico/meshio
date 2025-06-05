@@ -28,7 +28,10 @@ class Element:
             kw_list.remove('Name="Points"')
         # Paraview reads connectivities as 1 component
         if 'Name="connectivity"' in kw_list:
-            kw_list.remove('NumberOfComponents="3"')
+            for n in ('NumberOfComponents="3"', 'NumberOfComponents="4"'):
+                if n in kw_list:
+                    kw_list.remove(n)
+                    break
         f.write("<{}>\n".format(" ".join([self.name] + kw_list)))
         if self.text:
             f.write(self.text)
