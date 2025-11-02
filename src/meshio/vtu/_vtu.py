@@ -171,13 +171,19 @@ def get_grid(root):
                 raise ReadError(f"Unknown main tag '{c.tag}'.")
             if appended_data is not None:
                 raise ReadError("More than one AppendedData section found.")
-            if c.attrib["encoding"] != "base64":
-                raise ReadError("")
-            appended_data = c.text.strip()
-            # The appended data always begins with a (meaningless) underscore.
-            if appended_data[0] != "_":
-                raise ReadError()
-            appended_data = appended_data[1:]
+            encoding = c.attrib.get("encoding", "base64")
+            if encoding == "base64":
+                appended_data = c.text.strip()
+                # The appended data always begins with a (meaningless) underscore.
+                if appended_data[0] != "_":
+                    raise ReadError()
+                appended_data = appended_data[1:]
+            elif encoding == "raw":
+                # We don't consume the data here; the raw bytes (if needed) are
+                # extracted separately when constructing the reader.
+                appended_data = None
+            else:
+                raise ReadError(f"Unknown AppendedData encoding '{encoding}'.")
 
     if grid is None:
         raise ReadError("No UnstructuredGrid found.")
@@ -200,69 +206,11 @@ def _parse_raw_binary(filename):
 
     header = raw[:i_start].decode()
     footer = raw[i_stop:].decode()
+    # The appended data always begins with an underscore
     data = raw[i_start:i_stop].split(b"_", 1)[1].rsplit(b"\n", 1)[0]
 
     root = ET.fromstring(header + footer)
-
-    dtype = vtu_to_numpy_type[root.get("header_type", "UInt32")]
-    if "byte_order" in root.attrib:
-        dtype = dtype.newbyteorder("<" if root.get("byte_order") == "LittleEndian" else ">")
-
-    appended_data_tag = root.find("AppendedData")
-    assert appended_data_tag is not None
-    appended_data_tag.set("encoding", "base64")
-
-    compressor = root.get("compressor")
-    if compressor is None:
-        arrays = ""
-        i = 0
-        while i < len(data):
-            # The following find() runs into issues if offset is padded with spaces, see
-            # <https://github.com/nschloe/meshio/issues/1135>. It works in ParaView.
-            # Unfortunately, Python's built-in XML tree can't handle regexes, see
-            # <https://stackoverflow.com/a/38810731/353337>.
-            da_tag = root.find(f".//DataArray[@offset='{i}']")
-            if da_tag is None:
-                raise RuntimeError(f"Could not find .//DataArray[@offset='{i}']")
-            da_tag.set("offset", str(len(arrays)))
-
-            block_size = int(np.frombuffer(data[i : i + dtype.itemsize], dtype)[0])
-            arrays += base64.b64encode(data[i : i + block_size + dtype.itemsize]).decode()
-            i += block_size + dtype.itemsize
-
-    else:
-        c = {"vtkLZMADataCompressor": lzma, "vtkZLibDataCompressor": zlib}[compressor]
-        root.attrib.pop("compressor")
-
-        # raise ReadError("Compressed raw binary VTU files not supported.")
-        arrays = ""
-        i = 0
-        while i < len(data):
-            da_tag = root.find(f".//DataArray[@offset='{i}']")
-            assert da_tag is not None
-            da_tag.set("offset", str(len(arrays)))
-
-            num_blocks = int(np.frombuffer(data[i : i + dtype.itemsize], dtype)[0])
-            num_header_items = 3 + num_blocks
-            num_header_bytes = num_header_items * dtype.itemsize
-            header = np.frombuffer(data[i : i + num_header_bytes], dtype)
-
-            block_data = b""
-            j = 0
-            for k in range(num_blocks):
-                block_size = int(header[k + 3])
-                block_data += c.decompress(
-                    data[i + j + num_header_bytes : i + j + block_size + num_header_bytes]
-                )
-                j += block_size
-
-            block_size = np.array([len(block_data)]).astype(dtype).tobytes()
-            arrays += base64.b64encode(block_size + block_data).decode()
-
-            i += j + num_header_bytes
-
-    appended_data_tag.text = "_" + arrays
-    return root
+    return root, data
 
 
 vtu_to_numpy_type = {
@@ -289,12 +237,14 @@ class VtuReader:
     def __init__(self, filename):  # noqa: C901
         from xml.etree import ElementTree as ET
 
+        self._appended_data_bytes = None
+
         parser = ET.XMLParser()
         try:
             tree = ET.parse(str(filename), parser)
             root = tree.getroot()
         except ET.ParseError:
-            root = _parse_raw_binary(str(filename))
+            root, self._appended_data_bytes = _parse_raw_binary(str(filename))
 
         if root.tag != "VTKFile":
             raise ReadError(f"Expected tag 'VTKFile', found {root.tag}")
@@ -548,7 +498,7 @@ class VtuReader:
         block_data = np.concatenate(
             [
                 np.frombuffer(
-                    c.decompress(byte_array[byte_offsets[k] : byte_offsets[k + 1]]),
+                    c.decompress(byte_array[byte_offsets[k] : byte_offsets[k + 1]], bufsize=32768),
                     dtype=dtype,
                 )
                 for k in range(num_blocks)
@@ -556,6 +506,61 @@ class VtuReader:
         )
 
         return block_data
+
+    def read_uncompressed_appended_raw(self, offset: int, dtype):
+        assert self._appended_data_bytes is not None
+        header_dtype = vtu_to_numpy_type[self.header_type]
+        if self.byte_order is not None:
+            header_dtype = header_dtype.newbyteorder(
+                "<" if self.byte_order == "LittleEndian" else ">"
+            )
+        num_header_bytes = np.dtype(header_dtype).itemsize
+        data = self._appended_data_bytes
+
+        total_num_bytes = int(np.frombuffer(data[offset : offset + num_header_bytes], header_dtype)[0])
+
+        start = offset + num_header_bytes
+        end = start + total_num_bytes
+        if self.byte_order is not None:
+            dtype = dtype.newbyteorder("<" if self.byte_order == "LittleEndian" else ">")
+        return np.frombuffer(data[start:end], dtype=dtype)
+
+    def read_compressed_appended_raw(self, offset: int, dtype):
+        assert self._appended_data_bytes is not None
+        assert self.compression is not None
+        data = self._appended_data_bytes
+
+        header_dtype = vtu_to_numpy_type[self.header_type]
+        if self.byte_order is not None:
+            header_dtype = header_dtype.newbyteorder(
+                "<" if self.byte_order == "LittleEndian" else ">"
+            )
+        num_bytes_per_item = np.dtype(header_dtype).itemsize
+
+        # Number of blocks is first header item
+        num_blocks = int(np.frombuffer(data[offset : offset + num_bytes_per_item], header_dtype)[0])
+        num_header_items = 3 + int(num_blocks)
+        num_header_bytes = num_header_items * num_bytes_per_item
+        header = np.frombuffer(data[offset : offset + num_header_bytes], header_dtype)
+
+        block_sizes = header[3:]
+        # Compute byte offsets relative to start of block data
+        byte_offsets = np.empty(block_sizes.shape[0] + 1, dtype=block_sizes.dtype)
+        byte_offsets[0] = 0
+        np.cumsum(block_sizes, out=byte_offsets[1:])
+
+        c = {"vtkLZMADataCompressor": lzma, "vtkZLibDataCompressor": zlib}[self.compression]
+
+        if self.byte_order is not None:
+            dtype = dtype.newbyteorder("<" if self.byte_order == "LittleEndian" else ">")
+
+        base = offset + num_header_bytes
+        # Decompress and concatenate
+        blocks = [
+            c.decompress(data[base + int(byte_offsets[k]) : base + int(byte_offsets[k + 1])], bufsize=32768)
+            for k in range(int(num_blocks))
+        ]
+        return np.frombuffer(b"".join(blocks), dtype=dtype)
 
     def read_data(self, c):
         fmt = c.attrib["format"] if "format" in c.attrib else "ascii"
@@ -582,13 +587,21 @@ class VtuReader:
             data = reader(c.text.strip(), dtype)
         elif fmt == "appended":
             offset = int(c.attrib["offset"])
-            reader = (
-                self.read_uncompressed_binary
-                if self.compression is None
-                else self.read_compressed_binary
-            )
-            assert self.appended_data is not None
-            data = reader(self.appended_data[offset:], dtype)
+            if self._appended_data_bytes is not None:
+                reader = (
+                    self.read_uncompressed_appended_raw
+                    if self.compression is None
+                    else self.read_compressed_appended_raw
+                )
+                data = reader(offset, dtype)
+            else:
+                reader = (
+                    self.read_uncompressed_binary
+                    if self.compression is None
+                    else self.read_compressed_binary
+                )
+                assert self.appended_data is not None
+                data = reader(self.appended_data[offset:], dtype)
         else:
             raise ReadError(f"Unknown data format '{fmt}'.")
 
