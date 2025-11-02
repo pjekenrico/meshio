@@ -327,7 +327,12 @@ def read_ascii_buffer(f):
         elif items[0] == "Identifier" or items[0] == "Geometry":
             f.readline()
         elif items[0] in [
+            "NormalAtEdges",
+            "NormalAtQuadrilateralsVertices",
+            "NormalAtTriangleVertices",
             "RequiredVertices",
+            "RequiredEdges",
+            "RequiredTriangles",
             "TangentAtVertices",
             "Tangents",
         ]:
