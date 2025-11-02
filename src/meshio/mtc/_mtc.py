@@ -15,6 +15,13 @@ def skip_empty_lines(f: TextIOWrapper):
     return f
 
 
+def write_2d_array(f: TextIOWrapper, array2d: np.ndarray, format: str):
+    fmt = " ".join([format] * array2d.shape[1])
+    fmt = "\n".join([fmt] * array2d.shape[0])
+    data = fmt % tuple(array2d.ravel())
+    f.write(data)
+
+
 class MTCReader:
     """Helper class for reading MTC files."""
 
@@ -101,29 +108,36 @@ def read(filename):
 def write(filename: str, mesh: Mesh, dimension=None, precision: int = 17):
 
     if mesh.points.shape[1] == 2:
-        points = np.column_stack(
-            [mesh.points, np.zeros_like(mesh.points[:, 0])], dtype=float
-        )
+        points = np.column_stack([mesh.points, np.zeros_like(mesh.points[:, 0])])
     else:
         points = mesh.points
 
     prec = str(int(precision))
 
-    tetra = np.array([], dtype=int)
-    triangle = np.array([], dtype=int)
-    line = np.array([], dtype=int)
+    tri_list = []
+    tet_list = []
+    line = np.empty((0,), dtype=int)
     tet = False
     tri = False
 
     for cell_block in mesh.cells:
         cell_type = cell_block.type
-        data = np.array(cell_block.data).flatten().astype(int)
+        data = np.asarray(cell_block.data, dtype=int).ravel()
         if cell_type == "triangle":
             tri = True
-            triangle = np.concatenate((triangle, data), dtype=int)
-        if cell_type == "tetra":
+            tri_list.append(data)
+        elif cell_type == "tetra":
             tet = True
-            tetra = np.concatenate((tetra, data), dtype=int)
+            tet_list.append(data)
+
+    if tet_list:
+        tetra = np.concatenate(tet_list).astype(int, copy=False)
+    else:
+        tetra = np.empty((0,), dtype=int)
+    if tri_list:
+        triangle = np.concatenate(tri_list).astype(int, copy=False)
+    else:
+        triangle = np.empty((0,), dtype=int)
 
     if dimension:
         if float(dimension) < 3:
@@ -141,7 +155,7 @@ def write(filename: str, mesh: Mesh, dimension=None, precision: int = 17):
             points = points[:, 1:]
         elif np.all(points[:, 1] == points[0, 1]):
             dim = 2
-            points = points[:, -1:1]
+            points = points[:, [0, 2]]
         elif np.all(points[:, 2] == points[0, 2]):
             dim = 2
             points = points[:, :2]
@@ -150,15 +164,29 @@ def write(filename: str, mesh: Mesh, dimension=None, precision: int = 17):
     else:
         raise ValueError("No tetra, and no triangle, cannot export to mtc")
 
+    # Check tetra orientation
+    if dim == 3:
+        t = tetra[0]
+        normal = np.cross(
+            points[t[1]] - points[t[0]],
+            points[t[2]] - points[t[0]],
+        )
+        dot = np.dot(normal, points[t[3]] - points[t[0]])
+        if dot < 0:
+            print("Warning: Orientation of first tet is wrong, flipping them all.")
+            tetra = tetra[:, [0, 2, 1, 3]]
+
     # Apparently Cimlib prefers normals looking down in 2D
     # If normals are still wrong after that, there may be foldovers in your mesh
     if dim == 2:
         # Actually only checking the first normal
+        t = triangle[0]
         normal = np.cross(
-            points[triangle[0][1]] - points[triangle[0][0]],
-            points[triangle[0][2]] - points[triangle[0][0]],
+            points[t[1]] - points[t[0]],
+            points[t[2]] - points[t[0]],
         )
         if normal > 0:
+            print("Warning: Orientation of first triangle is wrong, flipping them all.")
             triangle = triangle[:, [0, 2, 1]]
 
     # Regenerating edges to be sure to not have unused edges
@@ -169,12 +197,28 @@ def write(filename: str, mesh: Mesh, dimension=None, precision: int = 17):
         tris4 = tetra[:, [1, 2, 3]]
 
         tris = np.concatenate((tris1, tris2, tris3, tris4), axis=0)
-        tris_sorted = np.sort(
-            tris, axis=1
-        )  # creates a copy, may be source of memory error
-        tris_sorted, uniq_idx, uniq_cnt = np.unique(
-            tris_sorted, axis=0, return_index=True, return_counts=True
-        )
+        canon = np.sort(tris, axis=1)
+
+        # Pack to 64-bit keys when possible for fast 1D unique
+        max_idx = int(canon.max(initial=0))
+        shift = int(np.ceil(np.log2(max_idx + 1))) if max_idx > 0 else 1
+        if shift * 3 <= 64:
+            a64 = canon[:, 0].astype(np.uint64, copy=False)
+            b64 = canon[:, 1].astype(np.uint64, copy=False)
+            c64 = canon[:, 2].astype(np.uint64, copy=False)
+            keys = a64 | (b64 << np.uint64(shift)) | (c64 << np.uint64(2 * shift))
+            _, uniq_idx, uniq_cnt = np.unique(
+                keys, return_index=True, return_counts=True
+            )
+        else:
+            canon = np.ascontiguousarray(canon)
+            view = canon.view(
+                [("a", canon.dtype), ("b", canon.dtype), ("c", canon.dtype)]
+            ).ravel()
+            _, uniq_idx, uniq_cnt = np.unique(
+                view, return_index=True, return_counts=True
+            )
+
         triangle = tris[uniq_idx][uniq_cnt == 1]
 
     if dim == 2:
@@ -183,18 +227,29 @@ def write(filename: str, mesh: Mesh, dimension=None, precision: int = 17):
         lin3 = triangle[:, [1, 2]]
 
         lin = np.concatenate((lin1, lin2, lin3), axis=0)
-        lin_sorted = np.sort(
-            lin, axis=1
-        )  # creates a copy, may be source of memory error
-        lin_sorted, uniq_idx, uniq_cnt = np.unique(
-            lin_sorted, axis=0, return_index=True, return_counts=True
-        )
+        canon = np.sort(lin, axis=1)
+
+        # Pack to 64-bit keys when possible for fast 1D unique
+        max_idx = int(canon.max(initial=0))
+        shift = int(np.ceil(np.log2(max_idx + 1))) if max_idx > 0 else 1
+        if shift * 2 <= 64:
+            a64 = canon[:, 0].astype(np.uint64, copy=False)
+            b64 = canon[:, 1].astype(np.uint64, copy=False)
+            keys = a64 | (b64 << np.uint64(shift))
+            _, uniq_idx, uniq_cnt = np.unique(
+                keys, return_index=True, return_counts=True
+            )
+        else:
+            canon = np.ascontiguousarray(canon)
+            view = canon.view([("a", canon.dtype), ("b", canon.dtype)]).ravel()
+            _, uniq_idx, uniq_cnt = np.unique(
+                view, return_index=True, return_counts=True
+            )
+
         line = lin[uniq_idx][uniq_cnt == 1]
 
     # Detecting used nodes
-    used_nodes = np.unique(
-        np.concatenate((tetra.flatten(), triangle.flatten()))
-    )  # sorted
+    used_nodes = np.unique(np.concatenate((tetra.ravel(), triangle.ravel())))  # sorted
     bools_keep = np.zeros(len(points), dtype=bool)
     bools_keep[used_nodes] = True
 
@@ -211,6 +266,8 @@ def write(filename: str, mesh: Mesh, dimension=None, precision: int = 17):
         line = new_indices[line]
 
     ############
+
+    print("Nb points : " + str(len(points)))
 
     nb_elems = len(triangle) + len(tetra)
     if dim == 2:
@@ -231,6 +288,7 @@ def write(filename: str, mesh: Mesh, dimension=None, precision: int = 17):
     line += 1
 
     with open(filename, "w") as fo:
+        # Header
         lig = (
             str(len(points))
             + " "
@@ -245,26 +303,30 @@ def write(filename: str, mesh: Mesh, dimension=None, precision: int = 17):
             lig = str(len(points)) + " 3 " + str(nb_elems) + " 4\n"
         fo.write(lig)
 
-        for node in points:
-            fo.write(("{0:." + prec + "g} {1:." + prec + "g}").format(node[0], node[1]))
-            if dim == 3 or dim == 2.5:
-                fo.write((" {0:." + prec + "g}").format(node[2]))
-            fo.write(" \n")
+        # Points
+        write_2d_array(fo, points, f"%.{prec}g")
+        fo.write("\n")
 
-        for e in tetra:
-            fo.write(
-                str(e[0]) + " " + str(e[1]) + " " + str(e[2]) + " " + str(e[3]) + " \n"
-            )
+        # Cells: tetrahedra first
+        if tetra.size:
+            write_2d_array(fo, tetra, "%d")
+            fo.write("\n")
 
-        for e in triangle:
+        # Triangles: with a trailing 0 in 3D/2.5, plain in 2D
+        if triangle.size:
             if dim == 3 or dim == 2.5:
-                fo.write(str(e[0]) + " " + str(e[1]) + " " + str(e[2]) + " 0 \n")
+                tri_out = np.column_stack(
+                    (triangle, np.zeros((triangle.shape[0], 1), dtype=int))
+                )
+                write_2d_array(fo, tri_out, "%d")
             else:
-                fo.write(str(e[0]) + " " + str(e[1]) + " " + str(e[2]) + " \n")
+                write_2d_array(fo, triangle, "%d")
+                fo.write("\n")
 
-        if dim == 2:
-            for e in line:
-                fo.write(str(e[0]) + " " + str(e[1]) + " 0 \n")
+        # Lines in 2D: write with trailing 0
+        if dim == 2 and line.size:
+            line_out = np.column_stack((line, np.zeros((line.shape[0], 1), dtype=int)))
+            write_2d_array(fo, line_out, "%d")
 
     print("Done.")
 
